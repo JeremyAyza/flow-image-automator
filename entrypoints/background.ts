@@ -13,8 +13,8 @@ let pollingInterval: any = null;
 let activeTabId: number | null = null;
 let rateLimitCooldownUntil = 0; // timestamp — no new injections before this
 
-// mediaId (= data-tile-id in DOM) → { sceneNumber, imageIndex }
-const mediaIdToScene = new Map<string, { sceneNumber: number; imageIndex: number }>();
+// mediaId (= data-tile-id in DOM) → { sceneNumber, imageIndex, sessionFolder }
+const mediaIdToScene = new Map<string, { sceneNumber: number; imageIndex: number; sessionFolder: string }>();
 
 export default defineBackground(() => {
   console.log('Flow Background Queue Orchestrator Started');
@@ -47,11 +47,16 @@ export default defineBackground(() => {
       const { prompts, tabId } = message;
       activeTabId = tabId;
 
+      const now = new Date();
+      const pad = (n: number) => n.toString().padStart(2, '0');
+      const sessionFolder = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}-${pad(now.getHours())}-${pad(now.getMinutes())}-${pad(now.getSeconds())}`;
+
       const newItems: QueueItem[] = prompts.map((p: { scene_number: number; prompt: string }) => ({
         id: Math.random().toString(36).substring(2, 9),
         scene_number: p.scene_number,
         prompt: p.prompt,
         status: 'PENDING',
+        session_folder: sessionFolder,
       }));
 
       queue = [...queue, ...newItems];
@@ -147,7 +152,7 @@ function handleBatchResponse(raw: any) {
         const mediaId: string | undefined = m?.image?.generatedImage?.mediaId ?? m?.name;
         if (mediaId && !mediaIdToScene.has(mediaId)) {
           const imageIndex = alreadyMapped + idx + 1;
-          mediaIdToScene.set(mediaId, { sceneNumber: target.scene_number, imageIndex });
+          mediaIdToScene.set(mediaId, { sceneNumber: target.scene_number, imageIndex, sessionFolder: target.session_folder });
           console.log(`    mapped mediaId ${mediaId} → scene ${target.scene_number} img ${imageIndex}`);
         }
       });
@@ -387,9 +392,16 @@ function startPollingIfNeeded() {
         if (uuidFromUrl) downloadedTileIds.add(uuidFromUrl); // needed for checkSceneComplete lookup
         const paddedScene = mapping.sceneNumber.toString().padStart(2, '0');
 
+        let filename = `Flow_Generations/${mapping.sessionFolder}/`;
+        if (IMAGES_PER_SCENE === 1) {
+          filename += `scene_${paddedScene}.png`;
+        } else {
+          filename += `scene_${paddedScene}/scene_${mapping.imageIndex}.png`;
+        }
+
         browser.downloads.download({
           url: imgUrl,
-          filename: `Flow_Generations/Escena_${paddedScene}/imagen_${mapping.imageIndex}.png`,
+          filename: filename,
           saveAs: false,
         }).catch(err => console.error('[DOWNLOAD] error', err));
 

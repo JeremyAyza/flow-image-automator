@@ -5,6 +5,7 @@ export interface QueueItem {
   scene_number: number;
   prompt: string;
   status: PromptStatus;
+  session_folder: string;
 }
 
 export interface ImagePrompt {

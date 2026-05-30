@@ -144,7 +144,7 @@ function App() {
   const progressPercent = totalItems > 0 ? Math.round((downloadedItems / totalItems) * 100) : 0;
 
   return (
-    <div style={{ padding: '12px', width: '400px', display: 'flex', flexDirection: 'column', gap: '12px', fontFamily: 'inherit' }}>
+    <div style={{ padding: '12px', width: '500px', display: 'flex', flexDirection: 'column', gap: '12px', fontFamily: 'inherit' }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <h2 style={{ margin: 0, fontSize: '16px', color: '#1a73e8' }}>Flow Script Processor</h2>
       </div>
