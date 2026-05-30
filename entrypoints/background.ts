@@ -78,6 +78,112 @@ export default defineBackground(() => {
       handleBatchResponse(message.data);
       return true;
     }
+
+    if (message.type === 'TEST_FIND_FAVORITE') {
+      console.log('=> Recibido TEST_FIND_FAVORITE para tabId:', message.tabId);
+      chrome.scripting.executeScript({
+        target: { tabId: message.tabId },
+        world: 'MAIN',
+        func: () => {
+          console.log('[TEST 1] Ejecutando script de busqueda...');
+          const tiles = Array.from(document.querySelectorAll('[data-tile-id]'));
+          const favTile = tiles.find(t => {
+            const img = t.querySelector('img');
+            const icons = Array.from(t.querySelectorAll('i.google-symbols'));
+            const hasFav = icons.some(i => i.textContent?.trim() === 'favorite');
+            return img && hasFav;
+          }) as HTMLElement;
+
+          if (favTile) {
+            console.log('[TEST 1] Found favorite tile:', favTile);
+            favTile.style.border = '5px solid red';
+            favTile.style.boxSizing = 'border-box';
+            console.log('[TEST 1] SUCCESS: Añadido borde rojo a la tarjeta');
+          } else {
+            console.error('[TEST 1] FAIL: Favorite image tile not found');
+          }
+        }
+      });
+      return true;
+    }
+
+    if (message.type === 'TEST_RIGHT_CLICK') {
+      console.log('=> Recibido TEST_RIGHT_CLICK para tabId:', message.tabId);
+      chrome.scripting.executeScript({
+        target: { tabId: message.tabId },
+        world: 'MAIN',
+        func: () => {
+          const tiles = Array.from(document.querySelectorAll('[data-tile-id]'));
+          const favTile = tiles.find(t => {
+            const img = t.querySelector('img');
+            const icons = Array.from(t.querySelectorAll('i.google-symbols'));
+            const hasFav = icons.some(i => i.textContent?.trim() === 'favorite');
+            return img && hasFav;
+          }) as HTMLElement;
+
+          if (favTile) {
+            favTile.style.border = '5px solid blue';
+            const targetImg = favTile.querySelector('img');
+            console.log('[TEST 2] Dispatching contextmenu on image', targetImg);
+
+            if (targetImg) {
+              const rect = targetImg.getBoundingClientRect();
+              const eventOptions = {
+                bubbles: true,
+                cancelable: true,
+                clientX: rect.left + 25,
+                clientY: rect.top + 25,
+                button: 2
+              };
+
+              targetImg.dispatchEvent(new MouseEvent('mousedown', eventOptions));
+              targetImg.dispatchEvent(new MouseEvent('mouseup', eventOptions));
+              targetImg.dispatchEvent(new MouseEvent('contextmenu', eventOptions));
+              console.log('[TEST 2] SUCCESS: Evento anticlic disparado en la imagen');
+            }
+          } else {
+            console.error('[TEST 2] FAIL: Tile not found');
+          }
+        }
+      });
+      return true;
+    }
+
+    if (message.type === 'TEST_CLICK_ADD') {
+      console.log('=> Recibido TEST_CLICK_ADD para tabId:', message.tabId);
+      chrome.scripting.executeScript({
+        target: { tabId: message.tabId },
+        world: 'MAIN',
+        func: () => {
+          const menuItems = Array.from(document.querySelectorAll('[role="menuitem"], button'));
+          const addOpt = menuItems.find(el => {
+            const text = el.textContent?.toLowerCase() || '';
+            return text.includes('añadir a la petición') || text.includes('add to prompt') || text.includes('use as reference');
+          });
+
+          if (addOpt) {
+            console.log('[TEST 3] Found add option:', addOpt);
+            
+            (addOpt as HTMLElement).style.backgroundColor = 'lime';
+            console.log('[TEST 3] Clicking menuItem:', addOpt);
+
+            addOpt.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+
+            const reactKey = Object.keys(addOpt).find(k => k.startsWith('__reactProps$'));
+            if (reactKey) {
+              const props = (addOpt as any)[reactKey];
+              if (props && typeof props.onClick === 'function') {
+                try { props.onClick({ preventDefault: () => { }, stopPropagation: () => { }, nativeEvent: { isTrusted: true } }); } catch { }
+              }
+            }
+            console.log('[TEST 3] SUCCESS: Click events disparados');
+          } else {
+            console.error('[TEST 3] FAIL: "Añadir a la petición" not found in DOM');
+          }
+        }
+      });
+      return true;
+    }
   });
 });
 
@@ -102,66 +208,70 @@ function handleBatchResponse(raw: any) {
 
     console.log(`[BATCH] response received — ${workflows.length} workflow(s), ${mediaItems.length} media item(s)`);
 
-    for (const workflow of workflows) {
-      const workflowId: string = workflow?.name ?? '(no name)';
-      const batchId: string | undefined = workflow?.metadata?.batchId;
-      const displayName: string | undefined = workflow?.metadata?.displayName;
+    if (workflows.length > 0) {
+      for (const workflow of workflows) {
+        const workflowId: string = workflow?.name ?? '(no name)';
+        const batchId: string | undefined = workflow?.metadata?.batchId;
+        const displayName: string | undefined = workflow?.metadata?.displayName;
 
-      console.log(`[BATCH] workflow: ${workflowId}`);
-      console.log(`  batchId:     ${batchId ?? '(none — skipping)'}`);
-      console.log(`  displayName: ${displayName ?? '(none)'}`);
+        if (!batchId) continue;
 
-      if (!batchId) continue;
-
-      // Log all media items that belong to this workflow
-      const batchMedia = mediaItems.filter(
-        m => m?.image?.generatedImage?.workflowId === workflowId || m?.workflowId === workflowId
-      );
-      console.log(`  media matched by workflowId: ${batchMedia.length} / ${mediaItems.length}`);
-      batchMedia.forEach((m: any, idx: number) => {
-        const mediaId = m?.image?.generatedImage?.mediaId ?? m?.name;
-        const textInput = m?.image?.generatedImage?.requestData?.promptInputs?.[0]?.textInput;
-        console.log(`    [${idx}] mediaId: ${mediaId}, textInput: "${textInput}"`);
-      });
-
-      // Match queue item by full prompt text (textInput is the original prompt, displayName is a short summary)
-      const promptFromResponse: string | undefined =
-        batchMedia[0]?.image?.generatedImage?.requestData?.promptInputs?.[0]?.textInput
-        ?? displayName;
-
-      console.log(`  prompt used for matching: "${promptFromResponse}"`);
-      console.log(`  queue IN_PROGRESS items:`, queue.filter(q => q.status === 'IN_PROGRESS').map(q => `scene ${q.scene_number} prompt="${q.prompt.slice(0, 40)}""`));
-
-      // Match only by prompt — a scene can receive multiple batch responses (1 per image)
-      const target = promptFromResponse
-        ? queue.find(q => q.status === 'IN_PROGRESS' && q.prompt === promptFromResponse)
-        : undefined;
-
-      if (!target) {
-        console.warn(`  [BATCH] no queue match — prompt "${promptFromResponse?.slice(0, 60)}" not found among IN_PROGRESS items`);
-        continue;
+        const batchMedia = mediaItems.filter(
+          m => m?.image?.generatedImage?.workflowId === workflowId || m?.workflowId === workflowId
+        );
+        
+        processBatchMedia(batchMedia, displayName);
       }
-
-      console.log(`  [BATCH] matched → scene ${target.scene_number}`);
-
-      // Count images already mapped for this scene to assign the correct imageIndex
-      const alreadyMapped = [...mediaIdToScene.values()]
-        .filter(v => v.sceneNumber === target.scene_number).length;
-
-      batchMedia.forEach((m: any, idx: number) => {
-        const mediaId: string | undefined = m?.image?.generatedImage?.mediaId ?? m?.name;
-        if (mediaId && !mediaIdToScene.has(mediaId)) {
-          const imageIndex = alreadyMapped + idx + 1;
-          mediaIdToScene.set(mediaId, { sceneNumber: target.scene_number, imageIndex, sessionFolder: target.session_folder });
-          console.log(`    mapped mediaId ${mediaId} → scene ${target.scene_number} img ${imageIndex}`);
-        }
-      });
+    } else if (mediaItems.length > 0) {
+      // Si el API nuevo solo devuelve media sin workflows, procesamos directamente
+      processBatchMedia(mediaItems, undefined);
     }
 
     broadcastQueue();
   } catch (e) {
     console.error('[BATCH] error', e);
   }
+}
+
+function processBatchMedia(batchMedia: any[], fallbackDisplayName?: string) {
+  if (batchMedia.length === 0) return;
+
+  batchMedia.forEach((m: any, idx: number) => {
+    const mediaId = m?.image?.generatedImage?.mediaId ?? m?.name;
+    const textInput = m?.image?.generatedImage?.requestData?.promptInputs?.[0]?.textInput;
+    console.log(`    [${idx}] mediaId: ${mediaId}, textInput: "${textInput?.slice(0, 40)}"`);
+  });
+
+  const promptFromResponse: string | undefined =
+    batchMedia[0]?.image?.generatedImage?.requestData?.promptInputs?.[0]?.textInput
+    ?? batchMedia[0]?.image?.generatedImage?.prompt
+    ?? fallbackDisplayName;
+
+  console.log(`  prompt used for matching: "${promptFromResponse?.slice(0, 40)}"`);
+
+  // Usamos includes() en lugar de === porque ahora el prompt real tiene el texto de "STYLE REFERENCES" al final
+  const target = promptFromResponse
+    ? queue.find(q => q.status === 'IN_PROGRESS' && promptFromResponse.includes(q.prompt))
+    : undefined;
+
+  if (!target) {
+    console.warn(`  [BATCH] no queue match — prompt "${promptFromResponse?.slice(0, 60)}" not found among IN_PROGRESS items`);
+    return;
+  }
+
+  console.log(`  [BATCH] matched → scene ${target.scene_number}`);
+
+  const alreadyMapped = [...mediaIdToScene.values()]
+    .filter(v => v.sceneNumber === target.scene_number).length;
+
+  batchMedia.forEach((m: any, idx: number) => {
+    const mediaId: string | undefined = m?.image?.generatedImage?.mediaId ?? m?.name;
+    if (mediaId && !mediaIdToScene.has(mediaId)) {
+      const imageIndex = alreadyMapped + idx + 1;
+      mediaIdToScene.set(mediaId, { sceneNumber: target.scene_number, imageIndex, sessionFolder: target.session_folder });
+      console.log(`    mapped mediaId ${mediaId} → scene ${target.scene_number} img ${imageIndex}`);
+    }
+  });
 }
 
 function broadcastQueue() {
@@ -227,7 +337,50 @@ async function processQueue() {
     await chrome.scripting.executeScript({
       target: { tabId: activeTabId },
       world: 'MAIN',
-      func: (promptText) => {
+      func: async (promptText) => {
+        try {
+          const tiles = Array.from(document.querySelectorAll('[data-tile-id]'));
+          const favTile = tiles.find(t => {
+            const img = t.querySelector('img');
+            const icons = Array.from(t.querySelectorAll('i.google-symbols'));
+            const hasFav = icons.some(i => i.textContent?.trim() === 'favorite');
+            return img && hasFav;
+          });
+
+          if (favTile) {
+            const targetImg = favTile.querySelector('img');
+            if (targetImg) {
+              const rect = targetImg.getBoundingClientRect();
+              const eventOptions = { bubbles: true, cancelable: true, clientX: rect.left + 25, clientY: rect.top + 25, button: 2 };
+              targetImg.dispatchEvent(new MouseEvent('mousedown', eventOptions));
+              targetImg.dispatchEvent(new MouseEvent('mouseup', eventOptions));
+              targetImg.dispatchEvent(new MouseEvent('contextmenu', eventOptions));
+            }
+            await new Promise(r => setTimeout(r, 200));
+
+            const menuItems = Array.from(document.querySelectorAll('[role="menuitem"], button'));
+            const addOpt = menuItems.find(el => {
+              const text = el.textContent?.toLowerCase() || '';
+              return text.includes('añadir a la petición') || text.includes('add to prompt') || text.includes('use as reference');
+            });
+
+            if (addOpt) {
+              addOpt.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+
+              const reactKey = Object.keys(addOpt).find(k => k.startsWith('__reactProps$'));
+              if (reactKey) {
+                const props = (addOpt as any)[reactKey];
+                if (props && typeof props.onClick === 'function') {
+                  try { props.onClick({ preventDefault: () => { }, stopPropagation: () => { }, nativeEvent: { isTrusted: true } }); } catch { }
+                }
+              }
+              await new Promise(r => setTimeout(r, 300));
+            }
+          }
+        } catch (e) {
+          console.warn('[FLOW-EXT] Error adding reference:', e);
+        }
+
         const editorDom = document.querySelector<HTMLElement>('[data-slate-editor="true"]');
         if (!editorDom) return;
         editorDom.focus();
