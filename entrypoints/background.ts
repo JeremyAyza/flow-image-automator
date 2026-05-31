@@ -445,7 +445,8 @@ async function processQueue() {
             const menuItems = Array.from(document.querySelectorAll('[role="menuitem"], button'));
             const addOpt = menuItems.find(el => {
               const text = el.textContent?.toLowerCase() || '';
-              return text.includes('añadir a la petición') || text.includes('add to prompt') || text.includes('use as reference');
+              const labels = ["añadir a la petición", "agregar a la instrucción", 'add to prompt, use as reference', "add "]
+              return labels.some(label => text.includes(label?.toLowerCase()));
             });
 
             if (addOpt) {
