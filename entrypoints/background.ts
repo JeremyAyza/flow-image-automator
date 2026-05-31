@@ -14,7 +14,7 @@ let activeTabId: number | null = null;
 let rateLimitCooldownUntil = 0; // timestamp — no new injections before this
 
 // mediaId (= data-tile-id in DOM) → { sceneNumber, imageIndex, sessionFolder }
-const mediaIdToScene = new Map<string, { sceneNumber: number; imageIndex: number; sessionFolder: string }>();
+const mediaIdToScene = new Map<string, { sceneNumber: number, imageIndex: number, sessionFolder: string, fifeUrl?: string }>();
 
 export default defineBackground(() => {
   console.log('Flow Background Queue Orchestrator Started');
@@ -76,6 +76,49 @@ export default defineBackground(() => {
 
     if (message.type === 'BATCH_DETECTED') {
       handleBatchResponse(message.data);
+      return true;
+    }
+
+    if (message.type === 'TEST_SCROLL') {
+      console.log('=> Recibido TEST_SCROLL para tabId:', message.tabId);
+      chrome.scripting.executeScript({
+        target: { tabId: message.tabId },
+        world: 'MAIN',
+        func: async () => {
+          console.log('[TEST 0] Buscando lista virtuoso...');
+          const virtuosoList = document.querySelector('[data-testid="virtuoso-item-list"]');
+
+          let targetScroller: Element | Window = window;
+          let scrollHeight = document.body.scrollHeight;
+
+          if (virtuosoList) {
+            // Hacemos click como sugirió el usuario para dar foco
+            virtuosoList.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+
+            // Buscamos el contenedor que realmente tiene el scroll
+            let scroller = virtuosoList.parentElement;
+            while (scroller && scroller !== document.body) {
+              const style = window.getComputedStyle(scroller);
+              if (style.overflowY === 'auto' || style.overflowY === 'scroll' || style.overflow === 'auto' || style.overflow === 'scroll') {
+                break;
+              }
+              scroller = scroller.parentElement;
+            }
+
+            if (scroller && scroller !== document.body) {
+              targetScroller = scroller;
+              scrollHeight = scroller.scrollHeight;
+            }
+          }
+
+          console.log('[TEST 0] Haciendo scroll al final...');
+          targetScroller.scrollTo(0, scrollHeight);
+          await new Promise(r => setTimeout(r, 800));
+          console.log('[TEST 0] Haciendo scroll al inicio...');
+          targetScroller.scrollTo(0, 0);
+          console.log('[TEST 0] Scroll completado');
+        }
+      });
       return true;
     }
 
@@ -163,7 +206,7 @@ export default defineBackground(() => {
 
           if (addOpt) {
             console.log('[TEST 3] Found add option:', addOpt);
-            
+
             (addOpt as HTMLElement).style.backgroundColor = 'lime';
             console.log('[TEST 3] Clicking menuItem:', addOpt);
 
@@ -201,8 +244,14 @@ function unwrapTrpc(raw: any): any {
 }
 
 function handleBatchResponse(raw: any) {
+  // === LOG SOLICITADO PARA INVESTIGAR LA CARGA ÚTIL ===
+  console.log("=== [FLOW] FULL BATCH RESPONSE PAYLOAD ===");
+  console.log(JSON.stringify(raw, null, 2));
+  console.log("=========================================");
+
   try {
     const data = unwrapTrpc(raw);
+    console.log('parse : ', data)
     const workflows: any[] = data?.workflows ?? [];
     const mediaItems: any[] = data?.media ?? [];
 
@@ -219,7 +268,7 @@ function handleBatchResponse(raw: any) {
         const batchMedia = mediaItems.filter(
           m => m?.image?.generatedImage?.workflowId === workflowId || m?.workflowId === workflowId
         );
-        
+
         processBatchMedia(batchMedia, displayName);
       }
     } else if (mediaItems.length > 0) {
@@ -236,15 +285,11 @@ function handleBatchResponse(raw: any) {
 function processBatchMedia(batchMedia: any[], fallbackDisplayName?: string) {
   if (batchMedia.length === 0) return;
 
-  batchMedia.forEach((m: any, idx: number) => {
-    const mediaId = m?.image?.generatedImage?.mediaId ?? m?.name;
-    const textInput = m?.image?.generatedImage?.requestData?.promptInputs?.[0]?.textInput;
-    console.log(`    [${idx}] mediaId: ${mediaId}, textInput: "${textInput?.slice(0, 40)}"`);
-  });
+  const dataGenerateImage = batchMedia[0]?.image?.generatedImage
 
   const promptFromResponse: string | undefined =
-    batchMedia[0]?.image?.generatedImage?.requestData?.promptInputs?.[0]?.textInput
-    ?? batchMedia[0]?.image?.generatedImage?.prompt
+    dataGenerateImage?.requestData?.promptInputs?.[0]?.textInput
+    ?? dataGenerateImage?.prompt
     ?? fallbackDisplayName;
 
   console.log(`  prompt used for matching: "${promptFromResponse?.slice(0, 40)}"`);
@@ -265,11 +310,16 @@ function processBatchMedia(batchMedia: any[], fallbackDisplayName?: string) {
     .filter(v => v.sceneNumber === target.scene_number).length;
 
   batchMedia.forEach((m: any, idx: number) => {
-    const mediaId: string | undefined = m?.image?.generatedImage?.mediaId ?? m?.name;
+    const mediaId = m?.image?.generatedImage?.mediaId ?? m?.name;
+    const fifeUrl = m?.image?.generatedImage?.fifeUrl;
     if (mediaId && !mediaIdToScene.has(mediaId)) {
-      const imageIndex = alreadyMapped + idx + 1;
-      mediaIdToScene.set(mediaId, { sceneNumber: target.scene_number, imageIndex, sessionFolder: target.session_folder });
-      console.log(`    mapped mediaId ${mediaId} → scene ${target.scene_number} img ${imageIndex}`);
+      mediaIdToScene.set(mediaId, {
+        sceneNumber: target.scene_number,
+        imageIndex: alreadyMapped + idx + 1,
+        sessionFolder: target.session_folder,
+        fifeUrl: fifeUrl
+      });
+      console.log(`    -> mapped ${mediaId} to scene ${target.scene_number} (img ${alreadyMapped + idx + 1}) | fifeUrl: ${fifeUrl ? 'yes' : 'no'}`);
     }
   });
 }
@@ -281,6 +331,40 @@ function broadcastQueue() {
 let isInitialized = false;
 
 async function initializeKnownIdsAndStart(tabId: number) {
+  try {
+    await chrome.scripting.executeScript({
+      target: { tabId },
+      func: async () => {
+        const virtuosoList = document.querySelector('[data-testid="virtuoso-item-list"]');
+        let targetScroller: Element | Window = window;
+        let scrollHeight = document.body.scrollHeight;
+
+        if (virtuosoList) {
+          virtuosoList.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+          let scroller = virtuosoList.parentElement;
+          while (scroller && scroller !== document.body) {
+            const style = window.getComputedStyle(scroller);
+            if (style.overflowY === 'auto' || style.overflowY === 'scroll' || style.overflow === 'auto' || style.overflow === 'scroll') {
+              break;
+            }
+            scroller = scroller.parentElement;
+          }
+          if (scroller && scroller !== document.body) {
+            targetScroller = scroller;
+            scrollHeight = scroller.scrollHeight;
+          }
+        }
+
+        targetScroller.scrollTo(0, scrollHeight);
+        await new Promise(r => setTimeout(r, 800));
+        targetScroller.scrollTo(0, 0);
+        await new Promise(r => setTimeout(r, 800));
+      }
+    });
+  } catch (e) {
+    console.error('[SCROLL] error', e);
+  }
+
   if (isInitialized) {
     processQueue();
     startPollingIfNeeded();
@@ -543,7 +627,7 @@ function startPollingIfNeeded() {
 
         downloadedTileIds.add(tileId);
         if (uuidFromUrl) downloadedTileIds.add(uuidFromUrl); // needed for checkSceneComplete lookup
-        const paddedScene = mapping.sceneNumber.toString().padStart(2, '0');
+        const paddedScene = mapping.sceneNumber.toString();
 
         let filename = `Flow_Generations/${mapping.sessionFolder}/`;
         if (IMAGES_PER_SCENE === 1) {
@@ -552,8 +636,11 @@ function startPollingIfNeeded() {
           filename += `scene_${paddedScene}/scene_${mapping.imageIndex}.png`;
         }
 
+        // Si tenemos un fifeUrl guardado, lo usamos y le agregamos =s0 para pedir la resolución original máxima
+        const finalUrl = mapping.fifeUrl ? `${mapping.fifeUrl}` : imgUrl;
+
         browser.downloads.download({
-          url: imgUrl,
+          url: finalUrl,
           filename: filename,
           saveAs: false,
         }).catch(err => console.error('[DOWNLOAD] error', err));
