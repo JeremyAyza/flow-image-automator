@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { browser } from 'wxt/browser';
-import { QueueItem, ScriptData, ScriptScene } from '../../utils/types';
+import { QueueItem, ScriptData, ScriptScene, SCENE_TIMEOUT_MS, SCENE_TIMEOUT_MINUTES } from '../../utils/types';
 import { parseImagePromptToText } from '../../utils/parser';
 import './App.css';
 
@@ -11,6 +11,9 @@ function App() {
   const [fileName, setFileName] = useState<string>('');
   const [inputType, setInputType] = useState<'file' | 'text'>('file');
   const [jsonText, setJsonText] = useState('');
+  const [scriptName, setScriptName] = useState('');
+  const [countdown, setCountdown] = useState<{ message: string, secondsLeft: number } | null>(null);
+  const [nowTick, setNowTick] = useState(Date.now());
 
   useEffect(() => {
     browser.runtime.sendMessage({ type: 'GET_QUEUE' }).then(res => {
@@ -23,10 +26,21 @@ function App() {
       if (message.type === 'QUEUE_UPDATED') {
         setQueue(message.queue);
       }
+      if (message.type === 'COUNTDOWN') {
+        if (message.message) {
+          setCountdown({ message: message.message, secondsLeft: message.secondsLeft });
+        } else {
+          setCountdown(null);
+        }
+      }
     };
     browser.runtime.onMessage.addListener(listener);
+    
+    const int = setInterval(() => setNowTick(Date.now()), 1000);
+    
     return () => {
       browser.runtime.onMessage.removeListener(listener);
+      clearInterval(int);
     };
   }, []);
 
@@ -87,6 +101,10 @@ function App() {
   };
 
   const handleStartQueue = async () => {
+    if (!scriptName.trim()) {
+      setError('Por favor, ingresa un nombre para el script.');
+      return;
+    }
     if (parsedScenes.length === 0) {
       setError('Por favor, ingresa un JSON válido primero.');
       return;
@@ -102,6 +120,7 @@ function App() {
 
       await browser.runtime.sendMessage({
         type: 'START_QUEUE',
+        scriptName: scriptName.trim(),
         prompts: parsedScenes,
         tabId: tab.id
       });
@@ -109,6 +128,7 @@ function App() {
       setParsedScenes([]);
       setFileName('');
       setJsonText('');
+      setScriptName('');
     } catch (err) {
       console.error(err);
       setError('Error al comunicar con la extensión.');
@@ -181,6 +201,14 @@ function App() {
           </button>
         </div>
 
+        <input
+          type="text"
+          placeholder="Nombre del Script"
+          value={scriptName}
+          onChange={(e) => setScriptName(e.target.value)}
+          style={{ width: '100%', fontSize: '11px', boxSizing: 'border-box', padding: '6px', borderRadius: '4px', border: '1px solid #dadce0' }}
+        />
+
         {inputType === 'file' ? (
           <input
             type="file"
@@ -206,21 +234,21 @@ function App() {
         <div style={{ display: 'flex', gap: '8px', marginTop: '4px' }}>
           <button
             onClick={handleStartQueue}
-            disabled={parsedScenes.length === 0}
+            disabled={parsedScenes.length === 0 || !scriptName.trim()}
             style={{
               flex: 1,
-              backgroundColor: parsedScenes.length === 0 ? '#dadce0' : '#1a73e8',
-              color: parsedScenes.length === 0 ? '#5f6368' : 'white',
+              backgroundColor: (parsedScenes.length === 0 || !scriptName.trim()) ? '#dadce0' : '#1a73e8',
+              color: (parsedScenes.length === 0 || !scriptName.trim()) ? '#5f6368' : 'white',
               border: 'none',
               padding: '6px 12px',
               borderRadius: '16px',
-              cursor: parsedScenes.length === 0 ? 'not-allowed' : 'pointer',
+              cursor: (parsedScenes.length === 0 || !scriptName.trim()) ? 'not-allowed' : 'pointer',
               fontWeight: 'bold',
               fontSize: '11px',
               transition: 'background-color 0.2s'
             }}
           >
-            Iniciar Generación
+            + Agregar a la cola
           </button>
 
           <button
@@ -269,32 +297,57 @@ function App() {
       )}
 
       {/* Cola de Trabajo */}
-      <div style={{ borderTop: '1px solid #eee', paddingTop: '8px' }}>
-        <h3 style={{ margin: '0 0 8px 0', fontSize: '12px', color: '#3c4043' }}>Detalle de Escenas</h3>
+      <div style={{ marginTop: '16px', padding: '12px', border: '1px solid #dadce0', borderRadius: '8px', backgroundColor: 'white' }}>
+        <h3 style={{ margin: '0 0 8px 0', fontSize: '13px', color: '#202124' }}>Detalle de Escenas</h3>
+        {countdown && (
+          <div style={{ backgroundColor: '#fef7e0', border: '1px solid #fbbc04', padding: '8px', borderRadius: '4px', marginBottom: '8px', fontSize: '11px', color: '#b08d00', fontWeight: 'bold', display: 'flex', justifyContent: 'space-between' }}>
+            <span>{countdown.message}</span>
+            <span>{countdown.secondsLeft}s</span>
+          </div>
+        )}
 
         {queue.length === 0 ? (
           <p style={{ fontSize: '11px', color: '#9aa0a6', fontStyle: 'italic', margin: 0 }}>No hay escenas en procesamiento.</p>
         ) : (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', maxHeight: '200px', overflowY: 'auto' }}>
-            {queue.map((item) => (
-              <div
-                key={item.id}
-                title={item.prompt} // TOOLTIP agregado aquí
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '6px',
-                  padding: '6px',
-                  backgroundColor: '#f8f9fa',
-                  borderRadius: '4px',
-                  borderLeft: `3px solid ${getStatusColor(item.status)}`,
-                  cursor: 'help'
-                }}
-              >
-                <span title={item.status} style={{ fontSize: '12px' }}>{getStatusIcon(item.status)}</span>
-                <span style={{ fontSize: '11px', color: '#202124', fontWeight: '500' }}>
-                  Escena {item.scene_number} - {item.status}
-                </span>
+            {Object.entries(
+              queue.reduce((acc, item) => {
+                const name = item.script_name || 'Sin Nombre';
+                if (!acc[name]) acc[name] = [];
+                acc[name].push(item);
+                return acc;
+              }, {} as Record<string, typeof queue>)
+            ).map(([groupName, items]) => (
+              <div key={groupName} style={{ marginBottom: '8px' }}>
+                <strong style={{ fontSize: '11px', color: '#1a73e8', display: 'block', marginBottom: '4px' }}>Script: {groupName}</strong>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                  {items.map((item) => (
+                    <div
+                      key={item.id}
+                      title={item.prompt}
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '6px',
+                        padding: '6px',
+                        backgroundColor: '#f8f9fa',
+                        borderRadius: '4px',
+                        borderLeft: `3px solid ${getStatusColor(item.status)}`,
+                        cursor: 'help'
+                      }}
+                    >
+                      <span title={item.status} style={{ fontSize: '12px' }}>{getStatusIcon(item.status)}</span>
+                      <span style={{ fontSize: '11px', color: '#202124', fontWeight: '500' }}>
+                        Escena {item.scene_number} - {item.status}
+                        {item.status === 'IN_PROGRESS' && item.started_at && (
+                          <span style={{ color: '#d93025', marginLeft: '6px' }}>
+                            (Timeout en {Math.max(0, SCENE_TIMEOUT_MINUTES * 60 - Math.floor((nowTick - item.started_at) / 1000))}s)
+                          </span>
+                        )}
+                      </span>
+                    </div>
+                  ))}
+                </div>
               </div>
             ))}
           </div>

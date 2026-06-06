@@ -1,5 +1,5 @@
 import { browser } from 'wxt/browser';
-import { QueueItem } from '../utils/types';
+import { QueueItem, SCENE_TIMEOUT_MS, SCRIPT_BOUNDARY_DELAY_SEC, SCENE_TIMEOUT_MINUTES } from '../utils/types';
 
 const MAX_CONCURRENT = 3;
 const IMAGES_PER_SCENE = 1;        // Flow generates this many images per prompt
@@ -12,6 +12,8 @@ let isInjecting = false;
 let pollingInterval: any = null;
 let activeTabId: number | null = null;
 let rateLimitCooldownUntil = 0; // timestamp — no new injections before this
+let lastProcessedSessionFolder: string | null = null;
+let countdownTimer: any = null;
 
 // mediaId (= data-tile-id in DOM) → { sceneNumber, imageIndex, sessionFolder }
 const mediaIdToScene = new Map<string, { sceneNumber: number, imageIndex: number, sessionFolder: string, fifeUrl?: string }>();
@@ -47,12 +49,11 @@ export default defineBackground(() => {
       const { prompts, tabId } = message;
       activeTabId = tabId;
 
-      const now = new Date();
-      const pad = (n: number) => n.toString().padStart(2, '0');
-      const sessionFolder = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}-${pad(now.getHours())}-${pad(now.getMinutes())}-${pad(now.getSeconds())}`;
+      const sessionFolder = `${message.scriptName}_${Date.now()}`;
 
       const newItems: QueueItem[] = prompts.map((p: { scene_number: number; prompt: string }) => ({
         id: Math.random().toString(36).substring(2, 9),
+        script_name: message.scriptName,
         scene_number: p.scene_number,
         prompt: p.prompt,
         status: 'PENDING',
@@ -251,7 +252,6 @@ function handleBatchResponse(raw: any) {
 
   try {
     const data = unwrapTrpc(raw);
-    console.log('parse : ', data)
     const workflows: any[] = data?.workflows ?? [];
     const mediaItems: any[] = data?.media ?? [];
 
@@ -307,7 +307,7 @@ function processBatchMedia(batchMedia: any[], fallbackDisplayName?: string) {
   console.log(`  [BATCH] matched → scene ${target.scene_number}`);
 
   const alreadyMapped = [...mediaIdToScene.values()]
-    .filter(v => v.sceneNumber === target.scene_number).length;
+    .filter(v => v.sceneNumber === target.scene_number && v.sessionFolder === target.session_folder).length;
 
   batchMedia.forEach((m: any, idx: number) => {
     const mediaId = m?.image?.generatedImage?.mediaId ?? m?.name;
@@ -413,9 +413,50 @@ async function processQueue() {
   const nextPending = queue.find(q => q.status === 'PENDING' || q.status === 'RATE_LIMITED');
   if (!nextPending) return;
 
+  // Si estamos saltando a un script diferente (y no es el primero)
+  if (lastProcessedSessionFolder && lastProcessedSessionFolder !== nextPending.session_folder) {
+    // Verificar si el script anterior aún tiene escenas en progreso
+    const previousScriptStillRunning = queue.some(q => q.session_folder === lastProcessedSessionFolder && q.status === 'IN_PROGRESS');
+    if (previousScriptStillRunning) {
+      // Bloquear y esperar a que termine el grupo anterior por completo
+      return;
+    }
+
+    console.log(`[QUEUE] Cambiando a un nuevo script (${nextPending.script_name}). Pausando 30 segundos...`);
+    isInjecting = true; // bloqueamos la cola temporalmente
+    lastProcessedSessionFolder = nextPending.session_folder;
+    
+    // Iniciar cuenta regresiva para la UI
+    let left = SCRIPT_BOUNDARY_DELAY_SEC;
+    if (countdownTimer) clearInterval(countdownTimer);
+    
+    const tick = () => {
+      browser.runtime.sendMessage({ type: 'COUNTDOWN', message: `Esperando para iniciar ${nextPending.script_name}`, secondsLeft: left }).catch(()=>{});
+      if (left <= 0) {
+        clearInterval(countdownTimer);
+        countdownTimer = null;
+        browser.runtime.sendMessage({ type: 'COUNTDOWN', message: null, secondsLeft: 0 }).catch(()=>{});
+        
+        console.log(`[QUEUE] Reanudando proceso para el nuevo script...`);
+        isInjecting = false;
+        processQueue();
+      }
+      left--;
+    };
+    tick();
+    countdownTimer = setInterval(tick, 1000);
+    return;
+  }
+
+  lastProcessedSessionFolder = nextPending.session_folder;
+
   isInjecting = true;
   nextPending.status = 'IN_PROGRESS';
+  nextPending.started_at = Date.now();
   broadcastQueue();
+  
+  // ASEGURAR que el polling esté corriendo, ya que pudo detenerse si la cola estuvo vacía temporalmente
+  startPollingIfNeeded();
 
   try {
     await chrome.scripting.executeScript({
@@ -544,10 +585,34 @@ function startPollingIfNeeded() {
     if (inProgressCount === 0) {
       clearInterval(pollingInterval);
       pollingInterval = null;
+      
+      const pendingCount = queue.filter(q => q.status === 'PENDING').length;
+      if (pendingCount === 0) {
+        lastProcessedSessionFolder = null; // Reset when queue is completely idle
+      }
       return;
     }
 
     if (!activeTabId) return;
+
+    // Lógica de Timeout
+    const nowTimeout = Date.now();
+    let timedOut = false;
+    const timeoutLimit = SCENE_TIMEOUT_MS || (3 * 60 * 1000);
+    queue.filter(q => q.status === 'IN_PROGRESS').forEach(q => {
+      if (q.started_at && nowTimeout - q.started_at > SCENE_TIMEOUT_MS) {
+        console.warn(`[TIMEOUT] Escena ${q.scene_number} del script ${q.script_name} tardó más de ${SCENE_TIMEOUT_MINUTES} minutos. Reintentando...`);
+        q.status = 'PENDING';
+        q.started_at = undefined;
+        timedOut = true;
+      }
+    });
+    
+    if (timedOut) {
+      broadcastQueue();
+      // Le decimos a la cola que revise si hay algo que inyectar
+      processQueue();
+    }
 
     try {
       const [{ result: scanResult }] = await chrome.scripting.executeScript({
@@ -595,25 +660,38 @@ function startPollingIfNeeded() {
 
         broadcastQueue();
 
-        // Schedule processQueue to run after cooldown expires
-        setTimeout(() => {
-          queue.filter(q => q.status === 'RATE_LIMITED').forEach(q => {
-            q.status = 'PENDING';
-          });
-          broadcastQueue();
-          processQueue();
-        }, RATE_LIMIT_COOLDOWN_MS);
+        let left = RATE_LIMIT_COOLDOWN_MS / 1000;
+        if (countdownTimer) clearInterval(countdownTimer);
+        const tick = () => {
+          browser.runtime.sendMessage({ type: 'COUNTDOWN', message: 'Límite de velocidad. Esperando', secondsLeft: left }).catch(()=>{});
+          if (left <= 0) {
+            clearInterval(countdownTimer);
+            countdownTimer = null;
+            browser.runtime.sendMessage({ type: 'COUNTDOWN', message: null, secondsLeft: 0 }).catch(()=>{});
+            
+            queue.filter(q => q.status === 'RATE_LIMITED').forEach(q => {
+              q.status = 'PENDING';
+            });
+            broadcastQueue();
+            processQueue();
+          }
+          left--;
+        };
+        tick();
+        countdownTimer = setInterval(tick, 1000);
       }
 
       const newTiles = currentTiles.filter(([id, imgUrl]) => {
         if (downloadedTileIds.has(id)) return false;
-        const uuid = imgUrl.match(/[?&]name=([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/i)?.[1];
+        const uuidMatch = imgUrl.match(/(?:[?&]name=|\/image\/)([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/i);
+        const uuid = uuidMatch ? uuidMatch[1] : undefined;
         if (uuid && downloadedTileIds.has(uuid)) return false;
         return true;
       });
 
       for (const [tileId, imgUrl] of newTiles) {
-        const uuidFromUrl = imgUrl.match(/[?&]name=([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/i)?.[1];
+        const uuidMatchUrl = imgUrl.match(/(?:[?&]name=|\/image\/)([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/i);
+        const uuidFromUrl = uuidMatchUrl ? uuidMatchUrl[1] : undefined;
 
         // Guard: another tile earlier in this same loop may have already claimed this uuid
         if (downloadedTileIds.has(tileId)) continue;
@@ -648,13 +726,15 @@ function startPollingIfNeeded() {
 
         console.log(`[DOWNLOAD] scene ${mapping.sceneNumber} img ${mapping.imageIndex} (tileId: ${tileId} | urlUuid: ${uuidFromUrl})`);
 
-        const sceneItem = queue.find(q => q.scene_number === mapping.sceneNumber && q.status === 'IN_PROGRESS');
+        const sceneItem = queue.find(q => q.scene_number === mapping.sceneNumber && q.session_folder === mapping.sessionFolder && q.status === 'IN_PROGRESS');
         if (sceneItem) {
           const sceneMediaIds = [...mediaIdToScene.entries()]
-            .filter(([, v]) => v.sceneNumber === mapping.sceneNumber)
+            .filter(([, v]) => v.sceneNumber === mapping.sceneNumber && v.sessionFolder === mapping.sessionFolder)
             .map(([k]) => k);
 
-          if (sceneMediaIds.length >= IMAGES_PER_SCENE && sceneMediaIds.every(mid => downloadedTileIds.has(mid))) {
+          const downloadedForScene = sceneMediaIds.filter(mid => downloadedTileIds.has(mid));
+
+          if (downloadedForScene.length >= IMAGES_PER_SCENE) {
             sceneItem.status = 'DOWNLOADED';
             broadcastQueue();
             processQueue();

@@ -8,12 +8,19 @@ export default defineContentScript({
     // --- Fetch interceptor ---
     const _originalFetch = window.fetch;
     window.fetch = async function (...args: Parameters<typeof fetch>) {
-      const url = typeof args[0] === 'string' ? args[0] : (args[0] as Request)?.url ?? '';
+      let url = '';
+      if (typeof args[0] === 'string') {
+        url = args[0];
+      } else if (args[0] instanceof URL) {
+        url = args[0].href;
+      } else if (args[0] && typeof (args[0] as any).url === 'string') {
+        url = (args[0] as any).url;
+      }
 
       // Log every fetch so we can confirm the interceptor is running
       console.log('[FLOW-EXT] fetch:', url.slice(0, 120));
 
-      const response = await _originalFetch.apply(this, args);
+      const response = await _originalFetch.apply(window, args);
 
       // Intercept tRPC calls on labs.google that may contain batch/media generation info
       if (url.includes('/fx/api/trpc/') || url.includes('batchGenerateImages')) {
