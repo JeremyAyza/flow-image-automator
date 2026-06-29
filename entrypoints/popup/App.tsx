@@ -64,6 +64,13 @@ function App() {
           prompt: parseImagePromptToText(scene.image_prompt)
         }));
 
+        if (json.thumbnail_prompt) {
+          prepared.unshift({
+            scene_number: 0,
+            prompt: parseImagePromptToText(json.thumbnail_prompt)
+          });
+        }
+
         setParsedScenes(prepared);
         setError('');
       } catch (err) {
@@ -91,12 +98,21 @@ function App() {
           if (!scriptData.scenes || !Array.isArray(scriptData.scenes)) {
             throw new Error(`El script ${name} no tiene el formato esperado (falta "scenes").`);
           }
+          const preparedPrompts = scriptData.scenes.map(scene => ({
+            scene_number: scene.scene_number,
+            prompt: parseImagePromptToText(scene.image_prompt)
+          }));
+
+          if (scriptData.thumbnail_prompt) {
+            preparedPrompts.unshift({
+              scene_number: 0,
+              prompt: parseImagePromptToText(scriptData.thumbnail_prompt)
+            });
+          }
+
           return {
             scriptName: name,
-            prompts: scriptData.scenes.map(scene => ({
-              scene_number: scene.scene_number,
-              prompt: parseImagePromptToText(scene.image_prompt)
-            }))
+            prompts: preparedPrompts
           };
         });
         setParsedMultipleScripts(preparedScripts);
@@ -109,15 +125,24 @@ function App() {
           setParsedScenes([]);
           return;
         }
+        console.log(json);
         const prepared = json.scenes.map(scene => ({
           scene_number: scene.scene_number,
           prompt: parseImagePromptToText(scene.image_prompt)
         }));
+
+        if (json.thumbnail_prompt) {
+          prepared.unshift({
+            scene_number: 0,
+            prompt: parseImagePromptToText(json.thumbnail_prompt)
+          });
+        }
         setParsedScenes(prepared);
         setParsedMultipleScripts([]);
         setError('');
       }
     } catch (err: any) {
+      console.error(err)
       setError(err.message || 'JSON inválido.');
       setParsedScenes([]);
       setParsedMultipleScripts([]);
@@ -390,7 +415,7 @@ function App() {
                     >
                       <span title={item.status} style={{ fontSize: '12px' }}>{getStatusIcon(item.status)}</span>
                       <span style={{ fontSize: '11px', color: '#202124', fontWeight: '500' }}>
-                        Escena {item.scene_number} - {item.status}
+                        {item.scene_number === 0 ? 'Miniatura' : `Escena ${item.scene_number}`} - {item.status}
                         {item.status === 'IN_PROGRESS' && item.started_at && (
                           <span style={{ color: '#d93025', marginLeft: '6px' }}>
                             (Timeout en {Math.max(0, SCENE_TIMEOUT_MINUTES * 60 - Math.floor((nowTick - item.started_at) / 1000))}s)

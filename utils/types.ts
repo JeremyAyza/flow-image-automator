@@ -25,6 +25,7 @@ export interface ScriptScene {
 }
 
 export interface ScriptData {
+  thumbnail_prompt?: ImagePrompt;
   scenes: ScriptScene[];
 }
 

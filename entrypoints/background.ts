@@ -716,7 +716,9 @@ function startPollingIfNeeded() {
         const paddedScene = mapping.sceneNumber.toString();
 
         let filename = `Flow_Generations/${mapping.sessionFolder}/`;
-        if (IMAGES_PER_SCENE === 1) {
+        if (mapping.sceneNumber === 0) {
+          filename += `thumbnail.png`;
+        } else if (IMAGES_PER_SCENE === 1) {
           filename += `scene_${paddedScene}.png`;
         } else {
           filename += `scene_${paddedScene}/scene_${mapping.imageIndex}.png`;
