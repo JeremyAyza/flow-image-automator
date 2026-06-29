@@ -14,6 +14,7 @@ let activeTabId: number | null = null;
 let rateLimitCooldownUntil = 0; // timestamp — no new injections before this
 let lastProcessedSessionFolder: string | null = null;
 let countdownTimer: any = null;
+let knownRateLimitTileIds = new Set<string>();
 
 // mediaId (= data-tile-id in DOM) → { sceneNumber, imageIndex, sessionFolder }
 const mediaIdToScene = new Map<string, { sceneNumber: number, imageIndex: number, sessionFolder: string, fifeUrl?: string }>();
@@ -70,6 +71,7 @@ export default defineBackground(() => {
     if (message.type === 'CLEAR_QUEUE') {
       queue = [];
       mediaIdToScene.clear();
+      knownRateLimitTileIds.clear();
       broadcastQueue();
       sendResponse({ success: true });
       return true;
@@ -632,7 +634,9 @@ function startPollingIfNeeded() {
             }
 
             // Detect rate limit error tiles — look for the error text (robust vs obfuscated class names)
-            if (t.textContent?.includes('too quickly')) {
+            // We use 'too quickly' and 'try again' to avoid false positives if the user's prompt contains 'too quickly'
+            const text = t.textContent?.toLowerCase() || '';
+            if (text.includes('too quickly') && text.includes('try again')) {
               rateLimitTileIds.push(id);
             }
           });
@@ -646,9 +650,12 @@ function startPollingIfNeeded() {
         rateLimitTileIds: string[];
       };
 
+      const newRateLimitTileIds = rateLimitTileIds.filter(id => !knownRateLimitTileIds.has(id));
+
       // Handle rate limit errors
-      if (rateLimitTileIds.length > 0) {
-        console.warn(`[RATE LIMIT] detected ${rateLimitTileIds.length} failed tile(s) — cooling down ${RATE_LIMIT_COOLDOWN_MS / 1000}s`);
+      if (newRateLimitTileIds.length > 0) {
+        newRateLimitTileIds.forEach(id => knownRateLimitTileIds.add(id));
+        console.warn(`[RATE LIMIT] detected ${newRateLimitTileIds.length} failed tile(s) — cooling down ${RATE_LIMIT_COOLDOWN_MS / 1000}s`);
         rateLimitCooldownUntil = Date.now() + RATE_LIMIT_COOLDOWN_MS;
 
         // Mark affected IN_PROGRESS scenes as RATE_LIMITED so they re-enter the queue after cooldown

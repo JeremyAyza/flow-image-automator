@@ -8,8 +8,9 @@ function App() {
   const [queue, setQueue] = useState<QueueItem[]>([]);
   const [error, setError] = useState('');
   const [parsedScenes, setParsedScenes] = useState<{ scene_number: number, prompt: string }[]>([]);
+  const [parsedMultipleScripts, setParsedMultipleScripts] = useState<{ scriptName: string, prompts: { scene_number: number, prompt: string }[] }[]>([]);
   const [fileName, setFileName] = useState<string>('');
-  const [inputType, setInputType] = useState<'file' | 'text'>('file');
+  const [inputType, setInputType] = useState<'file' | 'text' | 'multiple'>('multiple');
   const [jsonText, setJsonText] = useState('');
   const [scriptName, setScriptName] = useState('');
   const [countdown, setCountdown] = useState<{ message: string, secondsLeft: number } | null>(null);
@@ -78,34 +79,61 @@ function App() {
     setJsonText(text);
     if (!text.trim()) {
       setParsedScenes([]);
+      setParsedMultipleScripts([]);
       setError('');
       return;
     }
+    
     try {
-      const json = JSON.parse(text) as ScriptData;
-      if (!json.scenes || !Array.isArray(json.scenes)) {
-        setError('El JSON no tiene el formato esperado (falta "scenes").');
+      if (inputType === 'multiple') {
+        const json = JSON.parse(text) as Record<string, ScriptData>;
+        const preparedScripts = Object.entries(json).map(([name, scriptData]) => {
+          if (!scriptData.scenes || !Array.isArray(scriptData.scenes)) {
+            throw new Error(`El script ${name} no tiene el formato esperado (falta "scenes").`);
+          }
+          return {
+            scriptName: name,
+            prompts: scriptData.scenes.map(scene => ({
+              scene_number: scene.scene_number,
+              prompt: parseImagePromptToText(scene.image_prompt)
+            }))
+          };
+        });
+        setParsedMultipleScripts(preparedScripts);
         setParsedScenes([]);
-        return;
+        setError('');
+      } else {
+        const json = JSON.parse(text) as ScriptData;
+        if (!json.scenes || !Array.isArray(json.scenes)) {
+          setError('El JSON no tiene el formato esperado (falta "scenes").');
+          setParsedScenes([]);
+          return;
+        }
+        const prepared = json.scenes.map(scene => ({
+          scene_number: scene.scene_number,
+          prompt: parseImagePromptToText(scene.image_prompt)
+        }));
+        setParsedScenes(prepared);
+        setParsedMultipleScripts([]);
+        setError('');
       }
-      const prepared = json.scenes.map(scene => ({
-        scene_number: scene.scene_number,
-        prompt: parseImagePromptToText(scene.image_prompt)
-      }));
-      setParsedScenes(prepared);
-      setError('');
-    } catch (err) {
-      setError('JSON inválido.');
+    } catch (err: any) {
+      setError(err.message || 'JSON inválido.');
       setParsedScenes([]);
+      setParsedMultipleScripts([]);
     }
   };
 
   const handleStartQueue = async () => {
-    if (!scriptName.trim()) {
+    if (inputType !== 'multiple' && !scriptName.trim()) {
       setError('Por favor, ingresa un nombre para el script.');
       return;
     }
-    if (parsedScenes.length === 0) {
+    if (inputType === 'multiple' && parsedMultipleScripts.length === 0) {
+      setError('Por favor, ingresa un JSON válido primero.');
+      return;
+    }
+    if (inputType !== 'multiple' && parsedScenes.length === 0) {
       setError('Por favor, ingresa un JSON válido primero.');
       return;
     }
@@ -118,14 +146,26 @@ function App() {
         return;
       }
 
-      await browser.runtime.sendMessage({
-        type: 'START_QUEUE',
-        scriptName: scriptName.trim(),
-        prompts: parsedScenes,
-        tabId: tab.id
-      });
+      if (inputType === 'multiple') {
+        for (const script of parsedMultipleScripts) {
+          await browser.runtime.sendMessage({
+            type: 'START_QUEUE',
+            scriptName: script.scriptName,
+            prompts: script.prompts,
+            tabId: tab.id
+          });
+        }
+      } else {
+        await browser.runtime.sendMessage({
+          type: 'START_QUEUE',
+          scriptName: scriptName.trim(),
+          prompts: parsedScenes,
+          tabId: tab.id
+        });
+      }
 
       setParsedScenes([]);
+      setParsedMultipleScripts([]);
       setFileName('');
       setJsonText('');
       setScriptName('');
@@ -190,24 +230,31 @@ function App() {
 
         <div style={{ display: 'flex', gap: '8px' }}>
           <button
-            onClick={() => { setInputType('file'); setError(''); setParsedScenes([]); setJsonText(''); setFileName(''); }}
+            onClick={() => { setInputType('multiple'); setError(''); setParsedScenes([]); setParsedMultipleScripts([]); setJsonText(''); setFileName(''); }}
+            style={{ flex: 1, padding: '4px', fontSize: '11px', background: inputType === 'multiple' ? '#e8f0fe' : '#fff', color: inputType === 'multiple' ? '#1a73e8' : '#5f6368', border: '1px solid #dadce0', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold' }}>
+            Multi JSON
+          </button>
+          <button
+            onClick={() => { setInputType('file'); setError(''); setParsedScenes([]); setParsedMultipleScripts([]); setJsonText(''); setFileName(''); }}
             style={{ flex: 1, padding: '4px', fontSize: '11px', background: inputType === 'file' ? '#e8f0fe' : '#fff', color: inputType === 'file' ? '#1a73e8' : '#5f6368', border: '1px solid #dadce0', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold' }}>
             Archivo
           </button>
           <button
-            onClick={() => { setInputType('text'); setError(''); setParsedScenes([]); setJsonText(''); setFileName(''); }}
+            onClick={() => { setInputType('text'); setError(''); setParsedScenes([]); setParsedMultipleScripts([]); setJsonText(''); setFileName(''); }}
             style={{ flex: 1, padding: '4px', fontSize: '11px', background: inputType === 'text' ? '#e8f0fe' : '#fff', color: inputType === 'text' ? '#1a73e8' : '#5f6368', border: '1px solid #dadce0', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold' }}>
-            Pegar JSON
+            JSON Individual
           </button>
         </div>
 
-        <input
-          type="text"
-          placeholder="Nombre del Script"
-          value={scriptName}
-          onChange={(e) => setScriptName(e.target.value)}
-          style={{ width: '100%', fontSize: '11px', boxSizing: 'border-box', padding: '6px', borderRadius: '4px', border: '1px solid #dadce0' }}
-        />
+        {inputType !== 'multiple' && (
+          <input
+            type="text"
+            placeholder="Nombre del Script"
+            value={scriptName}
+            onChange={(e) => setScriptName(e.target.value)}
+            style={{ width: '100%', fontSize: '11px', boxSizing: 'border-box', padding: '6px', borderRadius: '4px', border: '1px solid #dadce0' }}
+          />
+        )}
 
         {inputType === 'file' ? (
           <input
@@ -225,7 +272,12 @@ function App() {
           />
         )}
 
-        {parsedScenes.length > 0 && (
+        {inputType === 'multiple' && parsedMultipleScripts.length > 0 && (
+          <div style={{ fontSize: '11px', color: '#1e8e3e', fontWeight: 'bold', marginTop: '2px' }}>
+            ✓ {parsedMultipleScripts.length} scripts detectados ({parsedMultipleScripts.reduce((acc, curr) => acc + curr.prompts.length, 0)} escenas en total)
+          </div>
+        )}
+        {inputType !== 'multiple' && parsedScenes.length > 0 && (
           <div style={{ fontSize: '11px', color: '#1e8e3e', fontWeight: 'bold', marginTop: '2px' }}>
             ✓ {parsedScenes.length} escenas detectadas {fileName ? `(${fileName})` : ''}
           </div>
@@ -234,15 +286,15 @@ function App() {
         <div style={{ display: 'flex', gap: '8px', marginTop: '4px' }}>
           <button
             onClick={handleStartQueue}
-            disabled={parsedScenes.length === 0 || !scriptName.trim()}
+            disabled={inputType === 'multiple' ? parsedMultipleScripts.length === 0 : (parsedScenes.length === 0 || !scriptName.trim())}
             style={{
               flex: 1,
-              backgroundColor: (parsedScenes.length === 0 || !scriptName.trim()) ? '#dadce0' : '#1a73e8',
-              color: (parsedScenes.length === 0 || !scriptName.trim()) ? '#5f6368' : 'white',
+              backgroundColor: (inputType === 'multiple' ? parsedMultipleScripts.length === 0 : (parsedScenes.length === 0 || !scriptName.trim())) ? '#dadce0' : '#1a73e8',
+              color: (inputType === 'multiple' ? parsedMultipleScripts.length === 0 : (parsedScenes.length === 0 || !scriptName.trim())) ? '#5f6368' : 'white',
               border: 'none',
               padding: '6px 12px',
               borderRadius: '16px',
-              cursor: (parsedScenes.length === 0 || !scriptName.trim()) ? 'not-allowed' : 'pointer',
+              cursor: (inputType === 'multiple' ? parsedMultipleScripts.length === 0 : (parsedScenes.length === 0 || !scriptName.trim())) ? 'not-allowed' : 'pointer',
               fontWeight: 'bold',
               fontSize: '11px',
               transition: 'background-color 0.2s'

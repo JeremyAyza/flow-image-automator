@@ -4,6 +4,7 @@ import { defineConfig } from 'wxt';
 export default defineConfig({
   modules: ['@wxt-dev/module-react'],
   manifest: {
+    name: "Flow Image Automator",
     permissions: ['scripting', 'activeTab', 'downloads']
   }
 });

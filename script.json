@@ -1,4 +1,16 @@
 {
+  "thumbnail_prompt": {
+    "subjects": [
+      {
+        "description": "Expressive stickman character with wide eyes and a sweating forehead, holding a massive golden ticket and surrounded by mountains of cash, but looking terrified as giant shadowy hands reach out for the money.",
+        "action": "Looking directly at the camera with a mix of shock and fear, gripping the golden ticket tightly."
+      }
+    ],
+    "environment": "A white background with chaotic financial symbols like '$' and '!' floating around, creating a sense of overwhelmed fortune.",
+    "lighting": "Dramatic high-contrast lighting, glowing yellow accents from the gold against a clean white backdrop.",
+    "composition": "Extreme close-up on the character's face with wide-angle distortion to emphasize the panic.",
+    "style": "Dynamic hand-drawn 2D webcomic sketch style, thick expressive black ink outlines, vibrant minimalist color palette for highlights, clean shading, white background with glowing accents."
+  },
   "scenes": [
     {
       "scene_number": 1,
