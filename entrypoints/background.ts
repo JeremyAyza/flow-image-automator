@@ -573,8 +573,11 @@ async function processQueue() {
   } finally {
     isInjecting = false;
     broadcastQueue();
-    // Do NOT call processQueue() here — next injection happens only after
-    // the current scene's images are confirmed downloaded in the UI (DOWNLOADED status)
+    
+    // Attempt to inject the next prompt to reach MAX_CONCURRENT, with a delay
+    setTimeout(() => {
+      processQueue();
+    }, INJECT_DELAY_MS);
   }
 }
 
