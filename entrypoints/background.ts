@@ -3,7 +3,7 @@ import { QueueItem, SCENE_TIMEOUT_MS, SCRIPT_BOUNDARY_DELAY_SEC, SCENE_TIMEOUT_M
 
 const MAX_CONCURRENT = 3;
 const IMAGES_PER_SCENE = 1;        // Flow generates this many images per prompt
-const INJECT_DELAY_MS = 15_000;    // 15s between injections → max 4 prompts/min = 8 images/min (rate limit)
+const INJECT_DELAY_MS = 3_000;     // 3s delay between injections to fill queue up to MAX_CONCURRENT
 const RATE_LIMIT_COOLDOWN_MS = 60_000; // 60s pause when rate limit error is detected
 
 let queue: QueueItem[] = [];
