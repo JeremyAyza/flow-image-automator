@@ -593,6 +593,17 @@ function startPollingIfNeeded() {
       
       const pendingCount = queue.filter(q => q.status === 'PENDING').length;
       if (pendingCount === 0) {
+        if (lastProcessedSessionFolder && activeTabId) {
+          console.log(`[CLEANUP] Lote finalizado. Iniciando auto-limpieza para sesión: ${lastProcessedSessionFolder}`);
+          
+          const sessionMediaIds = [...mediaIdToScene.entries()]
+            .filter(([, v]) => v.sessionFolder === lastProcessedSessionFolder)
+            .map(([k]) => k);
+            
+          if (sessionMediaIds.length > 0) {
+            cleanupImages(activeTabId, sessionMediaIds);
+          }
+        }
         lastProcessedSessionFolder = null; // Reset when queue is completely idle
       }
       return;
@@ -757,4 +768,83 @@ function startPollingIfNeeded() {
       console.error('[POLL] error', e);
     }
   }, 3000);
+}
+
+function cleanupImages(tabId: number, mediaIds: string[]) {
+  console.log(`[CLEANUP] Enviando comando para borrar ${mediaIds.length} imágenes...`);
+  chrome.scripting.executeScript({
+    target: { tabId },
+    world: 'MAIN',
+    func: async (idsToCleanup: string[]) => {
+      console.log('[CLEANUP] Iniciando proceso de borrado en la página...');
+      let selectedCount = 0;
+      
+      // 1. Seleccionar con Ctrl + Click y poner borde rojo
+      for (const id of idsToCleanup) {
+        const tile = document.querySelector(`[data-tile-id="${id}"]`) as HTMLElement;
+        if (tile) {
+          // Destacar el tile
+          tile.style.border = '5px solid red';
+          tile.style.boxSizing = 'border-box';
+          tile.style.transition = 'border 0.2s ease';
+          
+          // Buscar la imagen clickeable dentro del tile o el tile mismo
+          const targetEl = tile.querySelector('img') || tile;
+          
+          const rect = targetEl.getBoundingClientRect();
+          const eventOpts = {
+            bubbles: true,
+            cancelable: true,
+            clientX: rect.left + 25,
+            clientY: rect.top + 25,
+            ctrlKey: true, // Simulamos Ctrl
+            metaKey: true  // Simulamos Meta para Mac
+          };
+          
+          targetEl.dispatchEvent(new MouseEvent('mousedown', eventOpts));
+          targetEl.dispatchEvent(new MouseEvent('mouseup', eventOpts));
+          targetEl.dispatchEvent(new MouseEvent('click', eventOpts));
+          
+          selectedCount++;
+          // Pequeño delay para que la UI de Google registre las múltiples selecciones
+          await new Promise(resolve => setTimeout(resolve, 300));
+        }
+      }
+      
+      console.log(`[CLEANUP] Se seleccionaron ${selectedCount} elementos. Borrando...`);
+      
+      if (selectedCount > 0) {
+        // 2. Simular tecla Suprimir (Delete)
+        const deleteEvent = new KeyboardEvent('keydown', {
+          key: 'Delete',
+          code: 'Delete',
+          keyCode: 46,
+          bubbles: true,
+          cancelable: true
+        });
+        document.dispatchEvent(deleteEvent);
+        
+        // Si document no lo capta, intentamos en el contenedor principal si existe
+        const scroller = document.querySelector('[data-testid="virtuoso-item-list"]')?.parentElement;
+        if (scroller) {
+          scroller.dispatchEvent(deleteEvent);
+        }
+        
+        // Enviar también un Backspace por si acaso la app prefiere Backspace
+        const backspaceEvent = new KeyboardEvent('keydown', {
+          key: 'Backspace',
+          code: 'Backspace',
+          keyCode: 8,
+          bubbles: true,
+          cancelable: true
+        });
+        document.dispatchEvent(backspaceEvent);
+        
+        console.log('[CLEANUP] Proceso completado.');
+      } else {
+        console.log('[CLEANUP] No se encontraron elementos en el DOM para borrar.');
+      }
+    },
+    args: [mediaIds]
+  }).catch(err => console.error('[CLEANUP] Error ejecutando script de borrado:', err));
 }
