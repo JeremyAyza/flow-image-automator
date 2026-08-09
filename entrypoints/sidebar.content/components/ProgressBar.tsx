@@ -11,14 +11,18 @@ export const ProgressBar = () => {
   if (totalItems === 0) return null;
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px', color: '#5f6368', fontWeight: 'bold' }}>
+    <div className="flex flex-col gap-1">
+      <div className="flex justify-between text-[11px] text-gray-400 font-bold">
         <span>Progreso</span>
         <span>{downloadedItems} / {totalItems} ({progressPercent}%)</span>
       </div>
-      <div style={{ height: '6px', width: '100%', backgroundColor: '#e8eaed', borderRadius: '3px', overflow: 'hidden' }}>
-        <div style={{ height: '100%', width: `${progressPercent}%`, backgroundColor: '#34a853', transition: 'width 0.3s ease' }}></div>
+      <div className="h-1.5 w-full bg-gray-800 rounded-full overflow-hidden">
+        <div 
+          className="h-full bg-green-500 transition-all duration-300 ease-out" 
+          style={{ width: `${progressPercent}%` }}
+        ></div>
       </div>
     </div>
   );
 };
+

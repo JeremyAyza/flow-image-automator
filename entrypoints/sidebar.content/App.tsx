@@ -6,7 +6,6 @@ import { ControlPanel } from './components/ControlPanel';
 import { ProgressBar } from './components/ProgressBar';
 import { QueueList } from './components/QueueList';
 import { DebugPanel } from './components/DebugPanel';
-import './App.css';
 
 function App() {
   // Inicializa la sincronización con el service worker
@@ -15,16 +14,16 @@ function App() {
   const { error } = useAppStore();
 
   return (
-    <div style={{ padding: '12px', width: '500px', display: 'flex', flexDirection: 'column', gap: '12px', fontFamily: 'inherit' }}>
+    <div className="h-full w-full bg-gray-900 text-gray-200 p-4 flex flex-col gap-4 font-sans overflow-y-auto">
       <Header />
       
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+      <div className="flex flex-col gap-3">
         <ControlPanel />
         <DebugPanel />
       </div>
 
       {error && (
-        <p style={{ margin: 0, fontSize: '11px', color: '#d93025', textAlign: 'center' }}>
+        <p className="m-0 text-xs text-red-500 text-center font-medium">
           {error}
         </p>
       )}
@@ -37,3 +36,4 @@ function App() {
 }
 
 export default App;
+
