@@ -16,8 +16,8 @@ let lastProcessedSessionFolder: string | null = null;
 let countdownTimer: any = null;
 let knownRateLimitTileIds = new Set<string>();
 
-// mediaId (= data-tile-id in DOM) → { sceneNumber, imageIndex, sessionFolder }
-const mediaIdToScene = new Map<string, { sceneNumber: number, imageIndex: number, sessionFolder: string, fifeUrl?: string }>();
+// mediaId (= UUID from URL) → { sceneNumber, imageIndex, sessionFolder, fifeUrl, tileId }
+const mediaIdToScene = new Map<string, { sceneNumber: number, imageIndex: number, sessionFolder: string, fifeUrl?: string, tileId?: string }>();
 
 export default defineBackground(() => {
   console.log('Flow Background Queue Orchestrator Started');
@@ -132,7 +132,7 @@ export default defineBackground(() => {
         world: 'MAIN',
         func: () => {
           console.log('[TEST 1] Ejecutando script de busqueda...');
-          const tiles = Array.from(document.querySelectorAll('[data-tile-id]'));
+          const tiles = Array.from(document.querySelectorAll('[data-tile-id]:has(img):not(:has([data-tile-id]))'));
           const favTile = tiles.find(t => {
             const img = t.querySelector('img');
             const icons = Array.from(t.querySelectorAll('i.google-symbols'));
@@ -159,7 +159,7 @@ export default defineBackground(() => {
         target: { tabId: message.tabId },
         world: 'MAIN',
         func: () => {
-          const tiles = Array.from(document.querySelectorAll('[data-tile-id]'));
+          const tiles = Array.from(document.querySelectorAll('[data-tile-id]:has(img):not(:has([data-tile-id]))'));
           const favTile = tiles.find(t => {
             const img = t.querySelector('img');
             const icons = Array.from(t.querySelectorAll('i.google-symbols'));
@@ -226,6 +226,65 @@ export default defineBackground(() => {
           } else {
             console.error('[TEST 3] FAIL: "Añadir a la petición" not found in DOM');
           }
+        }
+      });
+      return true;
+    }
+
+    if (message.type === 'TEST_SELECT_LAST_THREE') {
+      console.log('=> Recibido TEST_SELECT_LAST_THREE para tabId:', message.tabId);
+      chrome.scripting.executeScript({
+        target: { tabId: message.tabId },
+        world: 'MAIN',
+        func: async () => {
+          console.log('[TEST 4] Iniciando selección de los 3 tiles más recientes...');
+          const realTiles = Array.from(document.querySelectorAll('[data-tile-id]:has(img):not(:has([data-tile-id]))')) as HTMLElement[];
+          const lastThree = realTiles.slice(0, 3);
+          for (const tile of lastThree) {
+            tile.style.border = '5px solid red';
+            tile.style.boxSizing = 'border-box';
+            
+            const targetEl = tile.querySelector('img') || tile;
+            const rect = targetEl.getBoundingClientRect();
+            const eventOpts = {
+              bubbles: true, cancelable: true,
+              clientX: rect.left + 25, clientY: rect.top + 25,
+              ctrlKey: true, metaKey: true
+            };
+            
+            targetEl.dispatchEvent(new MouseEvent('mousedown', eventOpts));
+            targetEl.dispatchEvent(new MouseEvent('mouseup', eventOpts));
+            targetEl.dispatchEvent(new MouseEvent('click', eventOpts));
+            await new Promise(resolve => setTimeout(resolve, 300));
+          }
+          console.log('[TEST 4] Los últimos 3 tiles fueron seleccionados.');
+        }
+      });
+      return true;
+    }
+
+    if (message.type === 'TEST_DELETE_SELECTED') {
+      console.log('=> Recibido TEST_DELETE_SELECTED para tabId:', message.tabId);
+      chrome.scripting.executeScript({
+        target: { tabId: message.tabId },
+        world: 'MAIN',
+        func: () => {
+          console.log('[TEST 5] Enviando evento de borrado...');
+          const deleteEvent = new KeyboardEvent('keydown', {
+            key: 'Delete', code: 'Delete', keyCode: 46, bubbles: true, cancelable: true
+          });
+          
+          const tiles = Array.from(document.querySelectorAll('[data-tile-id]:has(img):not(:has([data-tile-id]))'));
+          const firstTile = tiles[0];
+          if (firstTile) {
+            firstTile.dispatchEvent(deleteEvent);
+          } else {
+            document.dispatchEvent(deleteEvent);
+          }
+          
+          const scroller = document.querySelector('[data-testid="virtuoso-item-list"]')?.parentElement;
+          if (scroller) scroller.dispatchEvent(deleteEvent);
+          console.log('[TEST 5] Evento Suprimir despachado.');
         }
       });
       return true;
@@ -378,7 +437,7 @@ async function initializeKnownIdsAndStart(tabId: number) {
     const [{ result: initialIds }] = await chrome.scripting.executeScript({
       target: { tabId },
       func: () =>
-        Array.from(document.querySelectorAll('[data-tile-id]'))
+        Array.from(document.querySelectorAll('[data-tile-id]:has(img):not(:has([data-tile-id]))'))
           .filter(t => {
             const img = t.querySelector('img') as HTMLImageElement;
             return img && img.src && !img.src.includes('data:image');
@@ -596,12 +655,12 @@ function startPollingIfNeeded() {
         if (lastProcessedSessionFolder && activeTabId) {
           console.log(`[CLEANUP] Lote finalizado. Iniciando auto-limpieza para sesión: ${lastProcessedSessionFolder}`);
           
-          const sessionMediaIds = [...mediaIdToScene.entries()]
-            .filter(([, v]) => v.sessionFolder === lastProcessedSessionFolder)
-            .map(([k]) => k);
+          const sessionTileIds = [...mediaIdToScene.values()]
+            .filter(v => v.sessionFolder === lastProcessedSessionFolder && v.tileId)
+            .map(v => v.tileId as string);
             
-          if (sessionMediaIds.length > 0) {
-            cleanupImages(activeTabId, sessionMediaIds);
+          if (sessionTileIds.length > 0) {
+            cleanupImages(activeTabId, sessionTileIds);
           }
         }
         lastProcessedSessionFolder = null; // Reset when queue is completely idle
@@ -637,7 +696,7 @@ function startPollingIfNeeded() {
           const tiles: [string, string][] = [];
           const rateLimitTileIds: string[] = [];
 
-          document.querySelectorAll('[data-tile-id]').forEach(t => {
+          document.querySelectorAll('[data-tile-id]:has(img):not(:has([data-tile-id]))').forEach(t => {
             const id = t.getAttribute('data-tile-id');
             if (!id) return;
 
@@ -724,6 +783,8 @@ function startPollingIfNeeded() {
           console.log(`[POLL] tile ${tileId} | imgSrc: ${imgUrl.slice(0, 100)} | urlUuid: ${uuidFromUrl ?? 'none'} | no mapping yet, waiting`);
           continue;
         }
+        
+        mapping.tileId = tileId;
 
         downloadedTileIds.add(tileId);
         if (uuidFromUrl) downloadedTileIds.add(uuidFromUrl); // needed for checkSceneComplete lookup
@@ -770,8 +831,8 @@ function startPollingIfNeeded() {
   }, 3000);
 }
 
-function cleanupImages(tabId: number, mediaIds: string[]) {
-  console.log(`[CLEANUP] Enviando comando para borrar ${mediaIds.length} imágenes...`);
+function cleanupImages(tabId: number, tileIds: string[]) {
+  console.log(`[CLEANUP] Enviando comando para borrar ${tileIds.length} imágenes...`);
   chrome.scripting.executeScript({
     target: { tabId },
     world: 'MAIN',
@@ -781,7 +842,7 @@ function cleanupImages(tabId: number, mediaIds: string[]) {
       
       // 1. Seleccionar con Ctrl + Click y poner borde rojo
       for (const id of idsToCleanup) {
-        const tile = document.querySelector(`[data-tile-id="${id}"]`) as HTMLElement;
+        const tile = document.querySelector(`[data-tile-id="${id}"]:has(img):not(:has([data-tile-id]))`) as HTMLElement;
         if (tile) {
           // Destacar el tile
           tile.style.border = '5px solid red';
@@ -822,29 +883,30 @@ function cleanupImages(tabId: number, mediaIds: string[]) {
           bubbles: true,
           cancelable: true
         });
-        document.dispatchEvent(deleteEvent);
         
-        // Si document no lo capta, intentamos en el contenedor principal si existe
+        // Es MUY peligroso enviar eventos globalmente (especialmente Backspace que puede navegar atrás).
+        // Mejor disparamos el evento de Delete directamente en el primer elemento seleccionado
+        // para que la UI de React de Google Labs lo intercepte correctamente.
+        const firstTileId = idsToCleanup[0];
+        const firstTile = document.querySelector(`[data-tile-id="${firstTileId}"]:has(img):not(:has([data-tile-id]))`);
+        
+        if (firstTile) {
+          firstTile.dispatchEvent(deleteEvent);
+        } else {
+          document.dispatchEvent(deleteEvent);
+        }
+        
+        // Si el elemento no lo capta, intentamos en el contenedor principal si existe
         const scroller = document.querySelector('[data-testid="virtuoso-item-list"]')?.parentElement;
         if (scroller) {
           scroller.dispatchEvent(deleteEvent);
         }
         
-        // Enviar también un Backspace por si acaso la app prefiere Backspace
-        const backspaceEvent = new KeyboardEvent('keydown', {
-          key: 'Backspace',
-          code: 'Backspace',
-          keyCode: 8,
-          bubbles: true,
-          cancelable: true
-        });
-        document.dispatchEvent(backspaceEvent);
-        
-        console.log('[CLEANUP] Proceso completado.');
+        console.log('[CLEANUP] Proceso completado sin enviar Backspace.');
       } else {
         console.log('[CLEANUP] No se encontraron elementos en el DOM para borrar.');
       }
     },
-    args: [mediaIds]
+    args: [tileIds]
   }).catch(err => console.error('[CLEANUP] Error ejecutando script de borrado:', err));
 }
