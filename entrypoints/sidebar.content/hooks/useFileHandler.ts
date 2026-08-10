@@ -1,9 +1,11 @@
 import { useAppStore } from '../store/useAppStore';
+import { useTabId } from './useTabId';
 import { browser } from 'wxt/browser';
 import { ScriptData, ScriptScene } from '../../../utils/types';
 import { parseImagePromptToText } from '../../../utils/parser';
 
 export const useFileHandler = () => {
+  const tabId = useTabId();
   const {
     inputType,
     scriptName,
@@ -137,8 +139,8 @@ export const useFileHandler = () => {
 
     setError('');
     try {
-      const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-      if (!tab.id) {
+      // tabId viene del hook useTabId (cacheado en el store)
+      if (!tabId) {
         setError('Error: No active tab found.');
         return;
       }
@@ -149,7 +151,7 @@ export const useFileHandler = () => {
             type: 'START_QUEUE',
             scriptName: script.scriptName,
             prompts: script.prompts,
-            tabId: tab.id
+            tabId: tabId
           });
         }
       } else {
@@ -157,7 +159,7 @@ export const useFileHandler = () => {
           type: 'START_QUEUE',
           scriptName: scriptName.trim(),
           prompts: parsedScenes,
-          tabId: tab.id
+          tabId: tabId
         });
       }
 

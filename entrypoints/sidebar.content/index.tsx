@@ -27,11 +27,13 @@ export default defineContentScript({
 
     ui.mount();
 
-    // Los eventos 'paste' y 'keydown' son "composed": cruzan el Shadow DOM boundary
-    // y llegan a los listeners globales de Google Labs.
-    // Los interceptamos en el shadowHost (DOM real) DESPUÉS de que el textarea ya los procesó,
-    // deteniéndolos antes de que suban a document/window donde Google los captura.
+    // Los eventos de puntero/teclado son "composed" y cruzan el Shadow DOM boundary.
+    // Los interceptamos en el shadowHost para que no lleguen a los handlers globales de Google Labs.
+    // - paste / keydown(Ctrl+V, Ctrl+A): evita el toast "No hay imagen para copiar" y selección masiva.
+    // - mousedown / pointerdown: Radix UI los usa para detectar "click fuera" y cerrar sus menús contextuales.
     ui.shadowHost.addEventListener('paste', (e) => e.stopPropagation());
+    ui.shadowHost.addEventListener('mousedown', (e) => e.stopPropagation());
+    ui.shadowHost.addEventListener('pointerdown', (e) => e.stopPropagation());
     ui.shadowHost.addEventListener('keydown', (e) => {
       if ((e.ctrlKey || e.metaKey) && (e.key === 'v' || e.key === 'a')) e.stopPropagation();
     });

@@ -41,6 +41,11 @@ export default defineBackground(() => {
   });
 
   browser.runtime.onMessage.addListener((message, sender, sendResponse) => {
+    if (message.type === 'GET_TAB_ID') {
+      sendResponse({ tabId: sender.tab?.id ?? null });
+      return true;
+    }
+
     if (message.type === 'GET_QUEUE') {
       sendResponse({ queue });
       return true;

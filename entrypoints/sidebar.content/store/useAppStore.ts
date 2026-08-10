@@ -26,6 +26,9 @@ interface AppState {
   scriptName: string;
   setScriptName: (name: string) => void;
   
+  tabId: number | null;
+  setTabId: (tabId: number) => void;
+
   countdown: { message: string, secondsLeft: number } | null;
   setCountdown: (countdown: { message: string, secondsLeft: number } | null) => void;
   
@@ -57,6 +60,9 @@ export const useAppStore = create<AppState>((set) => ({
   scriptName: '',
   setScriptName: (scriptName) => set({ scriptName }),
   
+  tabId: null,
+  setTabId: (tabId) => set({ tabId }),
+
   countdown: null,
   setCountdown: (countdown) => set({ countdown }),
   
