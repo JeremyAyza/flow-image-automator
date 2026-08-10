@@ -391,7 +391,20 @@ function processBatchMedia(batchMedia: any[], fallbackDisplayName?: string) {
 }
 
 function broadcastQueue() {
-  browser.runtime.sendMessage({ type: 'QUEUE_UPDATED', queue }).catch(() => { });
+  const msg = { type: 'QUEUE_UPDATED', queue };
+  // Enviar a páginas de extensión (si el popup estuviera abierto)
+  browser.runtime.sendMessage(msg).catch(() => {});
+  // Enviar al content script del tab activo (el sidebar no recibe runtime.sendMessage)
+  if (activeTabId) {
+    chrome.tabs.sendMessage(activeTabId, msg).catch(() => {});
+  }
+}
+
+function broadcastMessage(msg: Record<string, unknown>) {
+  browser.runtime.sendMessage(msg).catch(() => {});
+  if (activeTabId) {
+    chrome.tabs.sendMessage(activeTabId, msg).catch(() => {});
+  }
 }
 
 let isInitialized = false;
@@ -497,11 +510,11 @@ async function processQueue() {
     if (countdownTimer) clearInterval(countdownTimer);
     
     const tick = () => {
-      browser.runtime.sendMessage({ type: 'COUNTDOWN', message: `Esperando para iniciar ${nextPending.script_name}`, secondsLeft: left }).catch(()=>{});
+      broadcastMessage({ type: 'COUNTDOWN', message: `Esperando para iniciar ${nextPending.script_name}`, secondsLeft: left });
       if (left <= 0) {
         clearInterval(countdownTimer);
         countdownTimer = null;
-        browser.runtime.sendMessage({ type: 'COUNTDOWN', message: null, secondsLeft: 0 }).catch(()=>{});
+        broadcastMessage({ type: 'COUNTDOWN', message: null, secondsLeft: 0 });
         
         console.log(`[QUEUE] Reanudando proceso para el nuevo script...`);
         isInjecting = false;
@@ -748,11 +761,11 @@ function startPollingIfNeeded() {
         let left = RATE_LIMIT_COOLDOWN_MS / 1000;
         if (countdownTimer) clearInterval(countdownTimer);
         const tick = () => {
-          browser.runtime.sendMessage({ type: 'COUNTDOWN', message: 'Límite de velocidad. Esperando', secondsLeft: left }).catch(()=>{});
+          broadcastMessage({ type: 'COUNTDOWN', message: 'Límite de velocidad. Esperando', secondsLeft: left });
           if (left <= 0) {
             clearInterval(countdownTimer);
             countdownTimer = null;
-            browser.runtime.sendMessage({ type: 'COUNTDOWN', message: null, secondsLeft: 0 }).catch(()=>{});
+            broadcastMessage({ type: 'COUNTDOWN', message: null, secondsLeft: 0 });
             
             queue.filter(q => q.status === 'RATE_LIMITED').forEach(q => {
               q.status = 'PENDING';
