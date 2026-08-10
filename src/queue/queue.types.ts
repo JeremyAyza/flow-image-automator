@@ -10,25 +10,10 @@ export interface QueueItem {
   started_at?: number;
 }
 
-export interface ImagePrompt {
-  subjects: { description: string; action: string }[];
-  environment: string;
-  lighting: string;
-  composition: string;
-  style: string;
-}
-
-export interface ScriptScene {
-  scene_number: number;
-  image_prompt: ImagePrompt;
-  narration: string;
-}
-
-export interface ScriptData {
-  thumbnail_prompt?: ImagePrompt;
-  scenes: ScriptScene[];
-}
-
 export const SCENE_TIMEOUT_MINUTES = 3;
 export const SCENE_TIMEOUT_MS = SCENE_TIMEOUT_MINUTES * 60 * 1000;
 export const SCRIPT_BOUNDARY_DELAY_SEC = 30;
+export const MAX_CONCURRENT = 3;
+export const IMAGES_PER_SCENE = 1;
+export const INJECT_DELAY_MS = 3_000;
+export const RATE_LIMIT_COOLDOWN_MS = 60_000;

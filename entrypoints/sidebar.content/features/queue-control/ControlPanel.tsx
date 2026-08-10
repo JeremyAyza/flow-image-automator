@@ -1,23 +1,17 @@
 import React from 'react';
-import { useAppStore } from '../store/useAppStore';
-import { useFileHandler } from '../hooks/useFileHandler';
+import { clsx } from 'clsx';
+import { useAppStore } from '../../shared/useAppStore';
+import { useQueueControl } from './useQueueControl';
 import { browser } from 'wxt/browser';
 
 export const ControlPanel = () => {
   const {
-    inputType,
-    setInputType,
-    scriptName,
-    setScriptName,
-    jsonText,
-    fileName,
-    parsedScenes,
-    parsedMultipleScripts,
-    resetForm,
-    setError
+    inputType, setInputType, scriptName, setScriptName,
+    jsonText, fileName, parsedScenes, parsedMultipleScripts,
+    resetForm
   } = useAppStore();
 
-  const { handleFileUpload, handleTextChange, handleStartQueue } = useFileHandler();
+  const { handleFileUpload, handleTextChange, handleStartQueue } = useQueueControl();
 
   const handleClearQueue = async () => {
     await browser.runtime.sendMessage({ type: 'CLEAR_QUEUE' });
@@ -27,23 +21,24 @@ export const ControlPanel = () => {
     ? parsedMultipleScripts.length === 0 
     : (parsedScenes.length === 0 || !scriptName.trim());
 
+  const getTabClass = (type: string) => clsx(
+    "flex-1 p-1 text-xs rounded border font-semibold transition-colors",
+    inputType === type 
+      ? "bg-blue-900/50 text-blue-400 border-blue-700" 
+      : "bg-gray-800 text-gray-400 border-gray-700 hover:bg-gray-700"
+  );
+
   return (
     <div className="flex flex-col gap-2 p-3 bg-gray-800 rounded-lg border border-dashed border-gray-700 min-h-[150px]">
       
       <div className="flex gap-2">
-        <button
-          onClick={() => { setInputType('multiple'); resetForm(); }}
-          className={`flex-1 p-1 text-xs rounded border font-semibold transition-colors ${inputType === 'multiple' ? 'bg-blue-900/50 text-blue-400 border-blue-700' : 'bg-gray-800 text-gray-400 border-gray-700 hover:bg-gray-700'}`}>
+        <button onClick={() => { setInputType('multiple'); resetForm(); }} className={getTabClass('multiple')}>
           Multi JSON
         </button>
-        <button
-          onClick={() => { setInputType('file'); resetForm(); }}
-          className={`flex-1 p-1 text-xs rounded border font-semibold transition-colors ${inputType === 'file' ? 'bg-blue-900/50 text-blue-400 border-blue-700' : 'bg-gray-800 text-gray-400 border-gray-700 hover:bg-gray-700'}`}>
+        <button onClick={() => { setInputType('file'); resetForm(); }} className={getTabClass('file')}>
           Archivo
         </button>
-        <button
-          onClick={() => { setInputType('text'); resetForm(); }}
-          className={`flex-1 p-1 text-xs rounded border font-semibold transition-colors ${inputType === 'text' ? 'bg-blue-900/50 text-blue-400 border-blue-700' : 'bg-gray-800 text-gray-400 border-gray-700 hover:bg-gray-700'}`}>
+        <button onClick={() => { setInputType('text'); resetForm(); }} className={getTabClass('text')}>
           JSON Individual
         </button>
       </div>
@@ -63,7 +58,7 @@ export const ControlPanel = () => {
           type="file"
           accept=".json"
           onChange={handleFileUpload}
-          className="text-xs mt-1 file:mr-2 file:py-1 file:px-2 file:rounded-md file:border-0 file:text-xs file:font-semibold file:bg-gray-700 file:text-gray-300 hover:file:bg-gray-600 cursor-pointer"
+          className="text-xs mt-1 file:mr-2 file:py-1 file:px-2 file:rounded-md file:border-0 file:font-semibold file:bg-gray-700 file:text-gray-300 hover:file:bg-gray-600 cursor-pointer"
         />
       ) : (
         <textarea
@@ -76,7 +71,7 @@ export const ControlPanel = () => {
 
       {inputType === 'multiple' && parsedMultipleScripts.length > 0 && (
         <div className="text-xs text-green-400 font-semibold mt-0.5">
-          ✓ {parsedMultipleScripts.length} scripts detectados ({parsedMultipleScripts.reduce((acc, curr) => acc + curr.prompts.length, 0)} escenas)
+          ✓ {parsedMultipleScripts.length} scripts detectados ({parsedMultipleScripts.reduce((acc: number, curr: any) => acc + curr.prompts.length, 0)} escenas)
         </div>
       )}
       {inputType !== 'multiple' && parsedScenes.length > 0 && (
@@ -89,9 +84,12 @@ export const ControlPanel = () => {
         <button
           onClick={handleStartQueue}
           disabled={isAddDisabled}
-          className={`flex-1 px-3 py-1.5 rounded-full font-bold text-xs transition-colors ${
-            isAddDisabled ? 'bg-gray-700 text-gray-500 cursor-not-allowed' : 'bg-blue-600 text-white hover:bg-blue-700 shadow-md'
-          }`}
+          className={clsx(
+            "flex-1 px-3 py-1.5 rounded-full font-bold text-xs transition-colors",
+            isAddDisabled 
+              ? "bg-gray-700 text-gray-500 cursor-not-allowed" 
+              : "bg-blue-600 text-white hover:bg-blue-700 shadow-md"
+          )}
         >
           + Agregar a la cola
         </button>
