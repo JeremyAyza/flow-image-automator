@@ -8,6 +8,7 @@ export default defineContentScript({
 
   cssInjectionMode: 'ui',
   async main(ctx) {
+    await new Promise(resolve => setTimeout(resolve, 10000));
     const ui = await createShadowRootUi(ctx, {
       name: 'flow-sidebar',
       position: 'inline',
