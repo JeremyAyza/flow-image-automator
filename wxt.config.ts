@@ -8,6 +8,7 @@ export default defineConfig({
   },
   manifest: {
     name: "Flow Image Automator",
-    permissions: ['scripting', 'activeTab', 'downloads']
+    permissions: ['scripting', 'activeTab', 'downloads'],
+    host_permissions: ['*://*.google.com/*', '*://labs.google/*']
   }
 });
