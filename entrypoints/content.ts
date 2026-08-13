@@ -1,5 +1,6 @@
 export default defineContentScript({
   matches: ['*://labs.google/*'],
+  runAt: 'document_start',
   main() {
     console.log('[FLOW-EXT] Content script loaded (isolated world)');
 
