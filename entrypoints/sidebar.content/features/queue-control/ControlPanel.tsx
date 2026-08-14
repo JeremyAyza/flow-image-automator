@@ -32,13 +32,13 @@ export const ControlPanel = () => {
     <div className="flex flex-col gap-2 p-3 bg-gray-800 rounded-lg border border-dashed border-gray-700 min-h-[150px]">
       
       <div className="flex gap-2">
-        <button onClick={() => { setInputType('multiple'); resetForm(); }} className={getTabClass('multiple')}>
+        <button onClick={() => { setInputType('multiple'); resetForm(); }} className={getTabClass('multiple')} data-testid="tab-multiple">
           Multi JSON
         </button>
-        <button onClick={() => { setInputType('file'); resetForm(); }} className={getTabClass('file')}>
+        <button onClick={() => { setInputType('file'); resetForm(); }} className={getTabClass('file')} data-testid="tab-file">
           Archivo
         </button>
-        <button onClick={() => { setInputType('text'); resetForm(); }} className={getTabClass('text')}>
+        <button onClick={() => { setInputType('text'); resetForm(); }} className={getTabClass('text')} data-testid="tab-text">
           JSON Individual
         </button>
       </div>
@@ -49,6 +49,7 @@ export const ControlPanel = () => {
           placeholder="Nombre del Script"
           value={scriptName}
           onChange={(e) => setScriptName(e.target.value)}
+          data-testid="input-script-name"
           className="w-full text-xs p-1.5 rounded bg-gray-900 border border-gray-700 text-gray-200 focus:border-blue-500 focus:outline-none placeholder-gray-500"
         />
       )}
@@ -58,6 +59,7 @@ export const ControlPanel = () => {
           type="file"
           accept=".json"
           onChange={handleFileUpload}
+          data-testid="input-file"
           className="text-xs mt-1 file:mr-2 file:py-1 file:px-2 file:rounded-md file:border-0 file:font-semibold file:bg-gray-700 file:text-gray-300 hover:file:bg-gray-600 cursor-pointer"
         />
       ) : (
@@ -65,17 +67,18 @@ export const ControlPanel = () => {
           value={jsonText}
           onChange={handleTextChange}
           placeholder="Pega el contenido del JSON aquí..."
+          data-testid="input-textarea"
           className="w-full h-12 text-xs p-1.5 rounded bg-gray-900 border border-gray-700 text-gray-200 resize-none mt-1 focus:border-blue-500 focus:outline-none placeholder-gray-500 scrollbar-thin scrollbar-thumb-gray-600"
         />
       )}
 
       {inputType === 'multiple' && parsedMultipleScripts.length > 0 && (
-        <div className="text-xs text-green-400 font-semibold mt-0.5">
+        <div className="text-xs text-green-400 font-semibold mt-0.5" data-testid="status-detected">
           ✓ {parsedMultipleScripts.length} scripts detectados ({parsedMultipleScripts.reduce((acc: number, curr: any) => acc + curr.prompts.length, 0)} escenas)
         </div>
       )}
       {inputType !== 'multiple' && parsedScenes.length > 0 && (
-        <div className="text-xs text-green-400 font-semibold mt-0.5">
+        <div className="text-xs text-green-400 font-semibold mt-0.5" data-testid="status-detected">
           ✓ {parsedScenes.length} escenas detectadas {fileName ? `(${fileName})` : ''}
         </div>
       )}
@@ -84,6 +87,7 @@ export const ControlPanel = () => {
         <button
           onClick={handleStartQueue}
           disabled={isAddDisabled}
+          data-testid="btn-add-queue"
           className={clsx(
             "flex-1 px-3 py-1.5 rounded-full font-bold text-xs transition-colors",
             isAddDisabled 

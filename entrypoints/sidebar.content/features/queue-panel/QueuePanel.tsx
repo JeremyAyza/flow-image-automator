@@ -45,7 +45,7 @@ export const QueuePanel = () => {
         <div className="flex flex-col gap-1">
           <div className="flex justify-between text-[11px] text-gray-400 font-bold">
             <span>Progreso</span>
-            <span>{downloadedItems} / {totalItems} ({progressPercent}%)</span>
+            <span data-testid="progress-text">{downloadedItems} / {totalItems} ({progressPercent}%)</span>
           </div>
           <div className="h-1.5 w-full bg-gray-900 rounded-full overflow-hidden">
             <div 
