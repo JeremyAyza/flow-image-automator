@@ -25,10 +25,10 @@ export default defineContentScript({
 
       const response = await _originalFetch.apply(window, args);
 
-      // Intercept tRPC calls on labs.google that may contain batch/media generation info
-      if (url.includes('/fx/api/trpc/') || url.includes('batchGenerateImages')) {
+      // Intercept tRPC or API calls that may contain batch/media generation info
+      if (url.includes('/trpc/') || url.includes('/api/') || url.includes('batchGenerateImages') || url.includes('generate')) {
         response.clone().text().then((text: string) => {
-          if (!text.includes('batchId') && !text.includes('mediaId')) return;
+          if (!text.includes('batchId') && !text.includes('mediaId') && !text.includes('workflowId')) return;
           console.log('[FLOW-EXT] response with batch/media info from:', url.slice(0, 120));
           console.log('[FLOW-EXT] response body (first 500):', text.slice(0, 500));
           // Try flat JSON first, then NDJSON
@@ -39,7 +39,7 @@ export default defineContentScript({
             text.split('\n').filter(l => l.trim()).forEach(line => {
               try {
                 const data = JSON.parse(line);
-                if (JSON.stringify(data).includes('batchId')) {
+                if (JSON.stringify(data).includes('batchId') || JSON.stringify(data).includes('mediaId')) {
                   window.postMessage({ type: 'FLOW_BATCH_RESPONSE', data }, '*');
                 }
               } catch {}

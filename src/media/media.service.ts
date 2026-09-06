@@ -80,8 +80,31 @@ export function handleNewTiles(currentTiles: [string, string][]) {
     const uuid = imgUrl.match(/(?:[?&]name=|\/image\/)([0-9a-f-]{36})/i)?.[1];
     if (downloadedTileIds.has(tileId) || (uuid && downloadedTileIds.has(uuid))) continue;
 
-    const mapping = uuid ? mediaIdToScene.get(uuid) : undefined;
-    if (!mapping) { console.log(`[POLL] tile ${tileId} — no mapping yet`); continue; }
+    let mapping = (uuid ? mediaIdToScene.get(uuid) : undefined) || mediaIdToScene.get(tileId);
+
+    // Fallback: si la respuesta tRPC / red no fue interceptada, asociar directamente a la escena IN_PROGRESS
+    if (!mapping) {
+      const inProgressItem = queue.find(q => q.status === 'IN_PROGRESS');
+      if (inProgressItem) {
+        const alreadyCount = [...mediaIdToScene.values()].filter(
+          v => v.sceneNumber === inProgressItem.scene_number && v.sessionFolder === inProgressItem.session_folder
+        ).length;
+        mapping = {
+          sceneNumber: inProgressItem.scene_number,
+          imageIndex: alreadyCount + 1,
+          sessionFolder: inProgressItem.session_folder,
+          tileId,
+        };
+        mediaIdToScene.set(tileId, mapping);
+        if (uuid) mediaIdToScene.set(uuid, mapping);
+        console.log(`[POLL] Fallback mapping tile ${tileId} → Scene ${inProgressItem.scene_number} (img ${alreadyCount + 1})`);
+      }
+    }
+
+    if (!mapping) {
+      console.log(`[POLL] tile ${tileId} — sin mapping ni escena en progreso`);
+      continue;
+    }
 
     mapping.tileId = tileId;
     downloadedTileIds.add(tileId);
@@ -94,12 +117,18 @@ export function handleNewTiles(currentTiles: [string, string][]) {
 
     const finalUrl = mapping.fifeUrl ?? imgUrl;
     browser.downloads.download({ url: finalUrl, filename, saveAs: false }).catch(e => console.error('[DOWNLOAD] error', e));
-    console.log(`[DOWNLOAD] scene ${mapping.sceneNumber} img ${mapping.imageIndex}`);
+    console.log(`[DOWNLOAD] scene ${mapping.sceneNumber} img ${mapping.imageIndex} (${finalUrl.slice(0, 60)}...)`);
 
     const sceneItem = queue.find(q => q.scene_number === mapping.sceneNumber && q.session_folder === mapping.sessionFolder && q.status === 'IN_PROGRESS');
     if (sceneItem) {
-      const sceneUUIDs = [...mediaIdToScene.entries()].filter(([, v]) => v.sceneNumber === mapping.sceneNumber && v.sessionFolder === mapping.sessionFolder).map(([k]) => k);
-      if (sceneUUIDs.filter(mid => downloadedTileIds.has(mid)).length >= IMAGES_PER_SCENE) {
+      const downloadedForScene = [...mediaIdToScene.values()].filter(
+        v => v.sceneNumber === mapping.sceneNumber &&
+             v.sessionFolder === mapping.sessionFolder &&
+             v.tileId &&
+             downloadedTileIds.has(v.tileId)
+      ).length;
+
+      if (downloadedForScene >= IMAGES_PER_SCENE) {
         // mutate via service
         import('../queue/queue.service').then(({ markStatus }) => {
           markStatus(sceneItem.id, 'DOWNLOADED');
