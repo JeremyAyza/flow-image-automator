@@ -1,0 +1,14 @@
+import { defineConfig } from 'wxt';
+
+// See https://wxt.dev/api/config.html
+export default defineConfig({
+  modules: ['@wxt-dev/module-react', '@wxt-dev/auto-icons'],
+  autoIcons: {
+    baseIconPath: 'assets/icon.svg'
+  },
+  manifest: {
+    name: "Flow Image Automator",
+    permissions: ['scripting', 'activeTab', 'downloads'],
+    host_permissions: ['*://*.google.com/*', '*://labs.google/*']
+  }
+});
