@@ -170,16 +170,19 @@ export function scriptFindSendBtn(tabId: number) {
     target: { tabId },
     world: 'MAIN',
     func: () => {
-      const sendBtn = Array.from(document.querySelectorAll('button')).find(b => {
+      const submitControls = document.querySelector('flow-base-prompt-box .submit-controls, .submit-controls');
+      const container = submitControls || document;
+      const sendBtn = Array.from(container.querySelectorAll('button')).find(b => {
         const icon = b.querySelector('i.google-symbols, mat-icon');
         return icon?.textContent?.trim() === 'arrow_forward';
-      });
+      }) || (submitControls?.querySelector('button:last-child') as HTMLButtonElement | null);
+
       if (sendBtn) {
         sendBtn.style.outline = '3px solid #06b6d4';
-        console.log('[DEBUG: SEND BTN] Botón Enviar encontrado:', sendBtn);
+        console.log('[DEBUG: SEND BTN] Botón Enviar encontrado en flow-base-prompt-box .submit-controls:', sendBtn);
         setTimeout(() => { sendBtn.style.outline = ''; }, 3500);
       } else {
-        console.error('[DEBUG: SEND BTN] Botón con ícono arrow_forward no encontrado.');
+        console.error('[DEBUG: SEND BTN] Botón Enviar no encontrado en flow-base-prompt-box .submit-controls.');
       }
     },
   });
@@ -273,3 +276,100 @@ export function scriptDeleteSelected(tabId: number) {
     },
   });
 }
+
+// ── 5. Formato de Salida (Modal Settings) ─────────────────────────────────────
+
+async function executeSetFormat(tabId: number, mode: 'Imagen' | 'Video', ratio?: '9:16' | '16:9') {
+  return chrome.scripting.executeScript({
+    target: { tabId },
+    world: 'MAIN',
+    func: async (targetMode: string, targetRatio?: string) => {
+      console.log(`[DEBUG: FORMAT] Configurando salida -> Modo: ${targetMode}, Ratio: ${targetRatio ?? 'N/A'}`);
+      
+      // 1. Buscar modal con class settings-content-overlay
+      const getActiveModal = () => {
+        const overlays = Array.from(document.querySelectorAll<HTMLElement>('flow-prompt-box-settings.settings-content-overlay'));
+        return overlays.find(el => el.offsetHeight > 0) || overlays[overlays.length - 1] || null;
+      };
+
+      let modal = getActiveModal();
+      if (!modal || modal.offsetHeight === 0) {
+        const trigger = document.querySelector<HTMLElement>(
+          'flow-base-prompt-box .submit-controls button.settings-trigger-button, ' +
+          'flow-base-prompt-box .submit-controls button[aria-label*="configuración" i], ' +
+          'flow-base-prompt-box .submit-controls button:first-child, ' +
+          '.submit-controls button.settings-trigger-button, ' +
+          'button.settings-trigger-button'
+        );
+        if (trigger) {
+          trigger.click();
+          await new Promise(r => setTimeout(r, 350));
+          modal = getActiveModal();
+        }
+      }
+
+      if (!modal) {
+        console.error('[DEBUG: FORMAT] No se encontró flow-prompt-box-settings.settings-content-overlay');
+        return false;
+      }
+
+      console.log('[DEBUG: FORMAT] Modal overlay activo encontrado:', modal);
+
+      // Helper para click en mat-button-toggle
+      const clickToggle = (container: Element, text: string) => {
+        const toggles = Array.from(container.querySelectorAll<HTMLElement>('mat-button-toggle'));
+        const found = toggles.find(t => {
+          const label = t.querySelector('.toggle-text')?.textContent || t.textContent || '';
+          return label.trim().toLowerCase() === text.toLowerCase();
+        }) || Array.from(container.querySelectorAll<HTMLElement>('button, .toggle-label')).find(b => {
+          return (b.textContent || '').trim().toLowerCase().includes(text.toLowerCase());
+        });
+
+        if (found) {
+          const btn = (found.querySelector('button') || found) as HTMLElement;
+          btn.focus();
+          btn.click();
+          btn.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true }));
+          btn.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, cancelable: true }));
+          btn.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+          console.log(`[DEBUG: FORMAT] Click en toggle "${text}":`, btn);
+          return true;
+        }
+        console.warn(`[DEBUG: FORMAT] Toggle "${text}" no encontrado.`);
+        return false;
+      };
+
+      // 2. Seleccionar Modo (Imagen / Video)
+      const modeContainer = modal.querySelector('flow-toggles[aria-label="Modo"], flow-toggles') || modal;
+      clickToggle(modeContainer, targetMode);
+      await new Promise(r => setTimeout(r, 200));
+
+      // 3. Seleccionar Aspect Ratio si aplica
+      if (targetRatio) {
+        const ratioContainer = modal.querySelector('flow-toggles[aria-label="Relación de aspecto"], flow-toggles[aria-label*="aspecto" i]') || modal;
+        clickToggle(ratioContainer, targetRatio);
+        await new Promise(r => setTimeout(r, 200));
+      }
+
+      // 4. Cerrar modal con tecla Escape
+      document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', code: 'Escape', keyCode: 27, bubbles: true }));
+      document.dispatchEvent(new KeyboardEvent('keyup', { key: 'Escape', code: 'Escape', keyCode: 27, bubbles: true }));
+      console.log('[DEBUG: FORMAT] Modal cerrado con Escape. Configuración aplicada.');
+      return true;
+    },
+    args: [mode, ratio],
+  });
+}
+
+export function scriptSetFormatVertical(tabId: number) {
+  return executeSetFormat(tabId, 'Imagen', '9:16');
+}
+
+export function scriptSetFormatHorizontal(tabId: number) {
+  return executeSetFormat(tabId, 'Imagen', '16:9');
+}
+
+export function scriptSetFormatVideo(tabId: number) {
+  return executeSetFormat(tabId, 'Video');
+}
+
