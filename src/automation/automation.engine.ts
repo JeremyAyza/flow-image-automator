@@ -156,8 +156,16 @@ export async function processQueue() {
     await chrome.scripting.executeScript({
       target: { tabId: activeTabId },
       world: 'MAIN',
-      func: async (promptText: string) => {
+      func: async (promptText: string, sceneNumber: number) => {
+        const humanDelay = (min = 1000, max = 4000) =>
+          new Promise(r => setTimeout(r, Math.floor(Math.random() * (max - min + 1)) + min));
+
+        console.log(`%c[PIPELINE: SCENE ${sceneNumber}] ▶ INICIO PROCESO DE INYECCIÓN`, 'color: #38bdf8; font-weight: bold;');
+        console.log(`[PIPELINE: SCENE ${sceneNumber}] Prompt: "${promptText.slice(0, 70)}..."`);
+
         try {
+          // ── Paso 1: Scroll al fondo ──
+          console.log(`[PIPELINE: SCENE ${sceneNumber}] [1/4] Desplazando al final del lienzo...`);
           const scrollerEl = document.querySelector('.virtual-scroll-container, [data-testid="virtuoso-item-list"]');
           let targetScroller: Element | Window = window;
           let scrollHeight = document.body.scrollHeight;
@@ -176,8 +184,11 @@ export async function processQueue() {
             (targetScroller as HTMLElement).dispatchEvent(new KeyboardEvent('keydown', { key: 'End', code: 'End', keyCode: 35, bubbles: true, cancelable: true }));
           }
           targetScroller.scrollTo({ top: scrollHeight, behavior: 'smooth' });
-          await new Promise(r => setTimeout(r, 800));
+          console.log(`[PIPELINE: SCENE ${sceneNumber}] [1/4] ✔ OK: Scroll realizado.`);
+          await humanDelay(1000, 3000);
 
+          // ── Paso 2: Favoritos y Referencias ──
+          console.log(`[PIPELINE: SCENE ${sceneNumber}] [2/4] Buscando imágenes favoritas como referencia...`);
           let favTiles: HTMLElement[] = [];
           if ((window as any).__FLOW_DOM__?.getFavoriteTiles) {
             favTiles = (window as any).__FLOW_DOM__.getFavoriteTiles();
@@ -194,57 +205,69 @@ export async function processQueue() {
             });
           }
           
-          for (const favTile of favTiles) {
-            const img = favTile.querySelector('img') || favTile;
-            if (img) {
-              const rect = img.getBoundingClientRect();
-              const opts = { bubbles: true, cancelable: true, clientX: rect.left + 25, clientY: rect.top + 25, button: 2 };
-              img.dispatchEvent(new MouseEvent('mousedown', opts));
-              img.dispatchEvent(new MouseEvent('mouseup', opts));
-              img.dispatchEvent(new MouseEvent('contextmenu', opts));
-            }
-            // Esperar a que el menú Angular CDK se monte en el DOM
-            let addOpt: HTMLElement | null = null;
-            for (let attempt = 0; attempt < 8; attempt++) {
-              await new Promise(r => setTimeout(r, 100));
-              const menuPanels = Array.from(document.querySelectorAll<HTMLElement>(
-                '.mat-mdc-menu-panel, flow-image-context-menu-items, flow-media-context-menu-items, [role="menu"]'
-              ));
-              const activeMenu = menuPanels.find(p => p.offsetHeight > 0) || menuPanels[menuPanels.length - 1];
-              if (activeMenu) {
-                const items = Array.from(activeMenu.querySelectorAll<HTMLElement>('flow-menu-item button, button[role="menuitem"], button'));
-                addOpt = items.find(el => {
-                  const text = (el.textContent || '').toLowerCase();
-                  const hasAddIcon = el.querySelector('mat-icon')?.textContent?.trim() === 'add_2';
-                  return (
-                    hasAddIcon ||
-                    text.includes('agregar a la instrucción') ||
-                    text.includes('añadir a la petición') ||
-                    text.includes('add to prompt') ||
-                    text.includes('use as reference')
-                  );
-                }) || null;
-                if (addOpt) break;
+          if (favTiles.length > 0) {
+            console.log(`[PIPELINE: SCENE ${sceneNumber}] [2/4] ✔ OK: Encontrados ${favTiles.length} tile(s) favorito(s). Añadiendo referencia...`);
+            for (let i = 0; i < favTiles.length; i++) {
+              const favTile = favTiles[i];
+              await humanDelay(1000, 2000);
+              const img = favTile.querySelector('img') || favTile;
+              if (img) {
+                const rect = img.getBoundingClientRect();
+                const opts = { bubbles: true, cancelable: true, clientX: rect.left + 25, clientY: rect.top + 25, button: 2 };
+                img.dispatchEvent(new MouseEvent('mousedown', opts));
+                img.dispatchEvent(new MouseEvent('mouseup', opts));
+                img.dispatchEvent(new MouseEvent('contextmenu', opts));
+                console.log(`[PIPELINE: SCENE ${sceneNumber}] [2/4] Menú contextual invocado en favorito #${i + 1}.`);
+              }
+
+              let addOpt: HTMLElement | null = null;
+              for (let attempt = 0; attempt < 8; attempt++) {
+                await new Promise(r => setTimeout(r, 150));
+                const menuPanels = Array.from(document.querySelectorAll<HTMLElement>(
+                  '.mat-mdc-menu-panel, flow-image-context-menu-items, flow-media-context-menu-items, [role="menu"]'
+                ));
+                const activeMenu = menuPanels.find(p => p.offsetHeight > 0) || menuPanels[menuPanels.length - 1];
+                if (activeMenu) {
+                  const items = Array.from(activeMenu.querySelectorAll<HTMLElement>('flow-menu-item button, button[role="menuitem"], button'));
+                  addOpt = items.find(el => {
+                    const text = (el.textContent || '').toLowerCase();
+                    const hasAddIcon = el.querySelector('mat-icon')?.textContent?.trim() === 'add_2';
+                    return (
+                      hasAddIcon ||
+                      text.includes('agregar a la instrucción') ||
+                      text.includes('añadir a la petición') ||
+                      text.includes('add to prompt') ||
+                      text.includes('use as reference')
+                    );
+                  }) || null;
+                  if (addOpt) break;
+                }
+              }
+
+              if (addOpt) {
+                await humanDelay(1000, 2000);
+                addOpt.focus();
+                addOpt.click();
+                addOpt.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true }));
+                addOpt.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, cancelable: true }));
+                addOpt.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+                console.log(`[PIPELINE: SCENE ${sceneNumber}] [2/4] ✔ OK: Opción "${addOpt.textContent?.trim()}" agregada como referencia.`);
+                await humanDelay(1500, 3500);
+              } else {
+                console.warn(`[PIPELINE: SCENE ${sceneNumber}] [2/4] ⚠ AVISO: No se encontró opción "Agregar a la instrucción" en el menú.`);
               }
             }
-
-            if (addOpt) {
-              addOpt.focus();
-              addOpt.click();
-              addOpt.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true }));
-              addOpt.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, cancelable: true }));
-              addOpt.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
-              console.log('[FLOW-EXT] Opción "Agregar a la instrucción" clickeada con éxito.');
-              await new Promise(r => setTimeout(r, 600));
-            } else {
-              console.warn('[FLOW-EXT] No se encontró la opción "Agregar a la instrucción" en el menú contextual.');
-            }
+          } else {
+            console.log(`[PIPELINE: SCENE ${sceneNumber}] [2/4] ℹ INFO: No hay favoritos marcados en el lienzo. Continuando sin referencia.`);
           }
-        } catch (e) { console.warn('[FLOW-EXT] Error adding reference:', e); }
+        } catch (e) {
+          console.warn(`[PIPELINE: SCENE ${sceneNumber}] [2/4] ⚠ ERROR manejando favoritos/scroll:`, e);
+        }
 
-        await new Promise(r => setTimeout(r, 300));
+        await humanDelay(1000, 2500);
 
-        // Buscar editor: soporte para Angular contenteditable, textarea o Slate
+        // ── Paso 3: Editor de texto e inyección de prompt ──
+        console.log(`[PIPELINE: SCENE ${sceneNumber}] [3/4] Buscando editor de texto para el prompt...`);
         const editor = document.querySelector<HTMLElement>(
           'flow-base-prompt-box [contenteditable="true"], ' +
           'flow-base-prompt-box [data-slate-editor="true"], ' +
@@ -254,12 +277,13 @@ export async function processQueue() {
         );
 
         if (!editor) {
-          console.error('[FLOW-EXT] Editor de texto no encontrado para inyectar prompt.');
+          console.error(`[PIPELINE: SCENE ${sceneNumber}] [3/4] ✖ ERROR CRÍTICO: Editor de texto no encontrado en el DOM.`);
           return;
         }
 
         editor.focus();
-        await new Promise(r => setTimeout(r, 100));
+        console.log(`[PIPELINE: SCENE ${sceneNumber}] [3/4] ✔ OK: Editor enfocado (${editor.tagName.toLowerCase()}). Escribiendo prompt...`);
+        await humanDelay(1000, 2000);
 
         if (editor instanceof HTMLTextAreaElement || editor instanceof HTMLInputElement) {
           editor.value = promptText;
@@ -290,35 +314,45 @@ export async function processQueue() {
             editor.dispatchEvent(new Event('input', { bubbles: true }));
           }
         }
+        console.log(`[PIPELINE: SCENE ${sceneNumber}] [3/4] ✔ OK: Prompt inyectado correctamente.`);
 
-        setTimeout(() => {
-          const submitControls = document.querySelector('flow-base-prompt-box .submit-controls, .submit-controls');
-          const sendBtn = Array.from((submitControls || document).querySelectorAll('button')).find(b => {
-            const icon = b.querySelector('i.google-symbols, mat-icon');
-            return icon?.textContent?.trim() === 'arrow_forward';
-          }) || (submitControls?.querySelector('button:last-child') as HTMLButtonElement | null);
+        await humanDelay(1500, 4000);
 
-          if (sendBtn) {
-            sendBtn.removeAttribute('disabled');
-            sendBtn.removeAttribute('aria-disabled');
-            sendBtn.style.pointerEvents = 'auto';
-            sendBtn.focus();
-            sendBtn.click();
-          } else {
-            editor.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', code: 'Enter', keyCode: 13, bubbles: true, cancelable: true }));
-          }
-        }, 800);
+        // ── Paso 4: Envío de prompt ──
+        console.log(`[PIPELINE: SCENE ${sceneNumber}] [4/4] Buscando botón de envío...`);
+        const submitControls = document.querySelector('flow-base-prompt-box .submit-controls, .submit-controls');
+        const sendBtn = Array.from((submitControls || document).querySelectorAll('button')).find(b => {
+          const icon = b.querySelector('i.google-symbols, mat-icon');
+          return icon?.textContent?.trim() === 'arrow_forward';
+        }) || (submitControls?.querySelector('button:last-child') as HTMLButtonElement | null);
+
+        if (sendBtn) {
+          sendBtn.removeAttribute('disabled');
+          sendBtn.removeAttribute('aria-disabled');
+          sendBtn.style.pointerEvents = 'auto';
+          sendBtn.focus();
+          sendBtn.click();
+          console.log(`[PIPELINE: SCENE ${sceneNumber}] [4/4] ✔ OK: Botón Enviar (arrow_forward) clickeado.`);
+        } else {
+          editor.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', code: 'Enter', keyCode: 13, bubbles: true, cancelable: true }));
+          console.log(`[PIPELINE: SCENE ${sceneNumber}] [4/4] ℹ INFO: Botón enviar no visible, enviado con tecla Enter.`);
+        }
+
+        await humanDelay(1000, 2500);
+        console.log(`%c[PIPELINE: SCENE ${sceneNumber}] ✔ FIN INYECCIÓN: Esperando generación y polling...`, 'color: #22c55e; font-weight: bold;');
       },
-      args: [nextPending.prompt],
+      args: [nextPending.prompt, nextPending.scene_number],
     });
-    await new Promise(r => setTimeout(r, 2000));
+    const postInjectDelay = Math.floor(Math.random() * 3000) + 1000;
+    await new Promise(r => setTimeout(r, postInjectDelay));
   } catch (e) {
-    console.error('[INJECT] error', e);
+    console.error(`[PIPELINE: ERROR] Error en inyección de escena ${nextPending.scene_number}:`, e);
     markStatus(nextPending.id, 'ERROR');
   } finally {
     isInjecting = false;
     broadcastQueue();
-    setTimeout(processQueue, INJECT_DELAY_MS);
+    const nextQueueDelay = Math.floor(Math.random() * 3000) + 1000;
+    setTimeout(processQueue, nextQueueDelay);
   }
 }
 
