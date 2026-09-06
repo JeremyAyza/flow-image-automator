@@ -4,7 +4,7 @@ import App from './App';
 import './style.css';
 
 export default defineContentScript({
-  matches: ['*://labs.google/*'],
+  matches: ['*://labs.google/*', '*://flow.google.com/*'],
 
   cssInjectionMode: 'ui',
   async main(ctx) {
