@@ -35,18 +35,19 @@ export async function initializeAndStart(tabId: number) {
     await chrome.scripting.executeScript({
       target: { tabId },
       func: async () => {
-        const virtuosoList = document.querySelector('[data-testid="virtuoso-item-list"]');
+        const scrollerEl = document.querySelector('.virtual-scroll-container, [data-testid="virtuoso-item-list"]');
         let targetScroller: Element | Window = window;
         let scrollHeight = document.body.scrollHeight;
-        if (virtuosoList) {
-          virtuosoList.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
-          let scroller = virtuosoList.parentElement;
+        if (scrollerEl) {
+          scrollerEl.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+          let scroller = scrollerEl.parentElement;
           while (scroller && scroller !== document.body) {
             const s = window.getComputedStyle(scroller);
             if (s.overflowY === 'auto' || s.overflowY === 'scroll') break;
             scroller = scroller.parentElement;
           }
           if (scroller && scroller !== document.body) { targetScroller = scroller; scrollHeight = scroller.scrollHeight; }
+          else if (scrollerEl.parentElement) { targetScroller = scrollerEl.parentElement; scrollHeight = scrollerEl.parentElement.scrollHeight; }
         }
         targetScroller.scrollTo(0, scrollHeight);
         await new Promise(r => setTimeout(r, 800));
@@ -62,10 +63,19 @@ export async function initializeAndStart(tabId: number) {
   try {
     const [{ result: initialIds }] = await chrome.scripting.executeScript({
       target: { tabId },
-      func: () =>
-        Array.from(document.querySelectorAll('[data-tile-id]:has(img):not(:has([data-tile-id]))'))
-          .filter(t => { const img = t.querySelector('img') as HTMLImageElement; return img?.src && !img.src.includes('data:image'); })
-          .map(el => el.getAttribute('data-tile-id')),
+      func: () => {
+        const ids: string[] = [];
+        document.querySelectorAll<HTMLImageElement>('img[data-media-id]').forEach(img => {
+          const mid = img.getAttribute('data-media-id');
+          if (mid && img.src && !img.src.includes('data:image')) ids.push(mid);
+        });
+        document.querySelectorAll('[data-tile-id]:has(img):not(:has([data-tile-id]))').forEach(t => {
+          const id = t.getAttribute('data-tile-id');
+          const img = t.querySelector('img') as HTMLImageElement;
+          if (id && img?.src && !img.src.includes('data:image')) ids.push(id);
+        });
+        return Array.from(new Set(ids));
+      },
     });
     initialIds?.forEach((id: string | null) => { if (id) downloadedTileIds.add(id); });
   } catch (e) { console.error('[INIT] error', e); }
@@ -127,17 +137,18 @@ export async function processQueue() {
       world: 'MAIN',
       func: async (promptText: string) => {
         try {
-          const virtuosoList = document.querySelector('[data-testid="virtuoso-item-list"]');
+          const scrollerEl = document.querySelector('.virtual-scroll-container, [data-testid="virtuoso-item-list"]');
           let targetScroller: Element | Window = window;
           let scrollHeight = document.body.scrollHeight;
-          if (virtuosoList) {
-            let scroller = virtuosoList.parentElement;
+          if (scrollerEl) {
+            let scroller = scrollerEl.parentElement;
             while (scroller && scroller !== document.body) {
               const style = window.getComputedStyle(scroller);
               if (style.overflowY === 'auto' || style.overflowY === 'scroll') break;
               scroller = scroller.parentElement;
             }
             if (scroller && scroller !== document.body) { targetScroller = scroller; scrollHeight = scroller.scrollHeight; }
+            else if (scrollerEl.parentElement) { targetScroller = scrollerEl.parentElement; scrollHeight = scrollerEl.parentElement.scrollHeight; }
           }
           if (targetScroller !== window) {
             (targetScroller as HTMLElement).focus();
@@ -146,15 +157,24 @@ export async function processQueue() {
           targetScroller.scrollTo({ top: scrollHeight, behavior: 'smooth' });
           await new Promise(r => setTimeout(r, 800));
 
-          const tiles = Array.from(document.querySelectorAll('[data-tile-id]'));
-          const favTiles = tiles.filter(t => {
-            const favIcons = Array.from(t.querySelectorAll('i.google-symbols')).filter(i => i.textContent?.trim() === 'favorite');
-            const hasValidFav = favIcons.some(icon => !icon.closest('[role="toolbar"]'));
-            return t.querySelector('img') && hasValidFav;
-          });
+          let favTiles: HTMLElement[] = [];
+          if ((window as any).__FLOW_DOM__?.getFavoriteTiles) {
+            favTiles = (window as any).__FLOW_DOM__.getFavoriteTiles();
+          }
+          if (favTiles.length === 0) {
+            const tiles = Array.from(document.querySelectorAll<HTMLElement>('flow-grid-tile-container, flow-image-tile, [data-tile-id]'));
+            favTiles = tiles.filter(t => {
+              const activeIcon = t.querySelector('.status-indicators-container mat-icon, mat-icon.fill');
+              if (activeIcon && activeIcon.textContent?.trim() === 'favorite') return true;
+              const removeFavBtn = t.querySelector('button[aria-label*="Quitar de favoritos" i]');
+              if (removeFavBtn) return true;
+              const favIcons = Array.from(t.querySelectorAll('i.google-symbols, mat-icon')).filter(i => i.textContent?.trim() === 'favorite' && i.classList.contains('fill'));
+              return t.querySelector('img') && favIcons.length > 0;
+            });
+          }
           
           for (const favTile of favTiles) {
-            const img = favTile.querySelector('img');
+            const img = favTile.querySelector('img') || favTile;
             if (img) {
               const rect = img.getBoundingClientRect();
               const opts = { bubbles: true, cancelable: true, clientX: rect.left + 25, clientY: rect.top + 25, button: 2 };
@@ -246,15 +266,29 @@ export function startPollingIfNeeded() {
         func: () => {
           const tiles: [string, string][] = [];
           const rateLimitTileIds: string[] = [];
+
+          // 1. Angular Flow: img[data-media-id]
+          document.querySelectorAll<HTMLImageElement>('img[data-media-id]').forEach(img => {
+            const id = img.getAttribute('data-media-id');
+            if (!id) return;
+            if (img.src && !img.src.includes('data:image')) {
+              tiles.push([id, img.src.startsWith('/') ? location.origin + img.src : img.src]);
+            }
+          });
+
+          // 2. Legacy fallback: [data-tile-id]
           document.querySelectorAll('[data-tile-id]:has(img):not(:has([data-tile-id]))').forEach(t => {
-            const id = t.getAttribute('data-tile-id'); if (!id) return;
+            const id = t.getAttribute('data-tile-id');
+            if (!id) return;
             const img = t.querySelector('img') as HTMLImageElement;
             if (img?.src && !img.src.includes('data:image')) {
-              tiles.push([id, img.src.startsWith('/') ? location.origin + img.src : img.src]); return;
+              tiles.push([id, img.src.startsWith('/') ? location.origin + img.src : img.src]);
+              return;
             }
             const text = t.textContent?.toLowerCase() || '';
             if (text.includes('too quickly') && text.includes('try again')) rateLimitTileIds.push(id);
           });
+
           return { tiles, rateLimitTileIds };
         },
       });

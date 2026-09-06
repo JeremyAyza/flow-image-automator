@@ -3,8 +3,10 @@ import { queue, setActiveTabId, addToQueue, clearQueue, broadcastQueue } from '.
 import { knownRateLimitTileIds, mediaIdToScene, initializeAndStart } from '../src/automation/automation.engine';
 import { handleBatchResponse } from '../src/media/media.service';
 import {
-  scriptScroll, scriptFindFavorite, scriptRightClick,
-  scriptClickAdd, scriptSelectLastThree, scriptDeleteSelected,
+  scriptDetectTiles, scriptLogMediaIds,
+  scriptFindFavorite, scriptRightClick, scriptClickAdd,
+  scriptFindEditor, scriptFindSendBtn,
+  scriptScroll, scriptSelectLastThree, scriptDeleteSelected,
 } from '../src/automation/automation.scripts';
 import { ScriptScene } from '../src/shared/script.schemas';
 import { parseImagePromptToText } from '../src/shared/script.parser';
@@ -75,10 +77,14 @@ export default defineBackground(() => {
 
     // ── Debug handlers ──────────────────────────────────────────────────────
     const debugActions: Record<string, (tabId: number) => void> = {
-      TEST_SCROLL: scriptScroll,
+      TEST_DETECT_TILES: scriptDetectTiles,
+      TEST_LOG_MEDIA_IDS: scriptLogMediaIds,
       TEST_FIND_FAVORITE: scriptFindFavorite,
       TEST_RIGHT_CLICK: scriptRightClick,
       TEST_CLICK_ADD: scriptClickAdd,
+      TEST_FIND_EDITOR: scriptFindEditor,
+      TEST_FIND_SEND_BTN: scriptFindSendBtn,
+      TEST_SCROLL: scriptScroll,
       TEST_SELECT_LAST_THREE: scriptSelectLastThree,
       TEST_DELETE_SELECTED: scriptDeleteSelected,
     };

@@ -1,9 +1,12 @@
+import { FlowDOM } from '../src/automation/flow-dom';
+
 export default defineContentScript({
   matches: ['*://*.google.com/*', '*://labs.google/*'],
   world: 'MAIN',
   runAt: 'document_start',
   main() {
-    console.log('[FLOW-EXT] Injector running in MAIN world — installing fetch/XHR interceptors');
+    (window as any).__FLOW_DOM__ = FlowDOM;
+    console.log('[FLOW-EXT] Injector running in MAIN world — FlowDOM installed');
 
     // --- Fetch interceptor ---
     const _originalFetch = window.fetch;
