@@ -121,7 +121,11 @@ export function cleanupImages(tabId: number, tileIds: string[]) {
     func: async (ids: string[]) => {
       let count = 0;
       for (const id of ids) {
-        const tile = document.querySelector(`[data-tile-id="${id}"]:has(img):not(:has([data-tile-id]))`) as HTMLElement;
+        const tile = (
+          document.querySelector(`img[data-media-id="${id}"]`)?.closest('flow-grid-tile-container, flow-image-tile') ??
+          document.querySelector(`[data-tile-id="${id}"]:has(img):not(:has([data-tile-id]))`) ??
+          document.querySelector(`img[data-media-id="${id}"]`)
+        ) as HTMLElement;
         if (!tile) continue;
         tile.style.border = '5px solid red'; tile.style.boxSizing = 'border-box';
         const el = tile.querySelector('img') || tile;
@@ -135,9 +139,13 @@ export function cleanupImages(tabId: number, tileIds: string[]) {
       }
       if (count > 0) {
         const ev = new KeyboardEvent('keydown', { key: 'Delete', code: 'Delete', keyCode: 46, bubbles: true, cancelable: true });
-        const first = document.querySelector(`[data-tile-id="${ids[0]}"]:has(img):not(:has([data-tile-id]))`);
+        const first = (
+          document.querySelector(`img[data-media-id="${ids[0]}"]`)?.closest('flow-grid-tile-container, flow-image-tile') ??
+          document.querySelector(`[data-tile-id="${ids[0]}"]:has(img):not(:has([data-tile-id]))`)
+        );
         (first ?? document).dispatchEvent(ev);
-        document.querySelector('[data-testid="virtuoso-item-list"]')?.parentElement?.dispatchEvent(ev);
+        const scroller = document.querySelector('.virtual-scroll-container, [data-testid="virtuoso-item-list"]');
+        (scroller?.parentElement ?? scroller)?.dispatchEvent(ev);
         console.log('[CLEANUP] Done');
       }
     },
