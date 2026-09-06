@@ -10,24 +10,50 @@ export function scriptDetectTiles(tabId: number) {
     world: 'MAIN',
     func: () => {
       let tiles: HTMLElement[] = [];
+      let source = 'fallback';
+
       if ((window as any).__FLOW_DOM__?.getTiles) {
         tiles = (window as any).__FLOW_DOM__.getTiles();
+        source = 'FlowDOM.getTiles()';
       }
+
       if (tiles.length === 0) {
-        tiles = Array.from(document.querySelectorAll<HTMLElement>('flow-grid-tile-container, flow-image-tile, [data-tile-id]'));
+        const gridTiles = Array.from(document.querySelectorAll<HTMLElement>('flow-grid-tile-container'));
+        if (gridTiles.length > 0) {
+          tiles = gridTiles;
+          source = '<flow-grid-tile-container>';
+        } else {
+          const imageTiles = Array.from(document.querySelectorAll<HTMLElement>('flow-image-tile'));
+          if (imageTiles.length > 0) {
+            tiles = imageTiles;
+            source = '<flow-image-tile>';
+          } else {
+            const mediaImgs = Array.from(document.querySelectorAll<HTMLImageElement>('img[data-media-id]'));
+            if (mediaImgs.length > 0) {
+              tiles = mediaImgs.map(img => (img.closest('flow-grid-tile-container, flow-image-tile') as HTMLElement) || img);
+              source = 'img[data-media-id]';
+            } else {
+              tiles = Array.from(document.querySelectorAll<HTMLElement>('[data-tile-id]:has(img):not(:has([data-tile-id]))'));
+              source = '[data-tile-id] legacy';
+            }
+          }
+        }
       }
 
-      console.log(`[DEBUG: TILES] Detectados ${tiles.length} tiles`);
-      tiles.forEach((t, idx) => {
-        t.style.outline = '3px solid #22c55e';
-        t.style.outlineOffset = '-3px';
-      });
+      if (tiles.length > 0) {
+        console.log(`[DEBUG: TILES] OK - Detectados ${tiles.length} tiles vía ${source}:`, tiles);
+        tiles.forEach((t, idx) => {
+          t.style.outline = '3px solid #22c55e';
+          t.style.outlineOffset = '-3px';
+        });
+        setTimeout(() => {
+          tiles.forEach(t => { t.style.outline = ''; t.style.outlineOffset = ''; });
+        }, 3500);
+      } else {
+        console.warn('[DEBUG: TILES] ERROR - No se detectó ningún tile en el DOM. Revisa si la vista contiene imágenes renderizadas o si el contenedor virtual requiere scroll.');
+      }
 
-      setTimeout(() => {
-        tiles.forEach(t => { t.style.outline = ''; t.style.outlineOffset = ''; });
-      }, 3500);
-
-      return tiles.length;
+      return { count: tiles.length, source };
     },
   });
 }
