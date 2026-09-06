@@ -93,6 +93,22 @@ export const DebugPanel = () => {
           </button>
         </div>
       </div>
+
+      {/* 5. Formato de Salida (Modal) */}
+      <div className="flex flex-col gap-1">
+        <span className="text-[10px] text-gray-400 font-medium">5. Formato de Salida</span>
+        <div className="flex gap-1.5">
+          <button onClick={() => send('TEST_SET_FORMAT_VERTICAL')} className={btnClass('blue')}>
+            Img 9:16
+          </button>
+          <button onClick={() => send('TEST_SET_FORMAT_HORIZONTAL')} className={btnClass('cyan')}>
+            Img 16:9
+          </button>
+          <button onClick={() => send('TEST_SET_FORMAT_VIDEO')} className={btnClass('yellow')}>
+            Video
+          </button>
+        </div>
+      </div>
     </div>
   );
 };

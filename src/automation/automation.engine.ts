@@ -210,7 +210,12 @@ export async function processQueue() {
         if (!evt.defaultPrevented) { document.execCommand('insertText', false, promptText); editor.dispatchEvent(new Event('input', { bubbles: true })); }
 
         setTimeout(() => {
-          const sendBtn = Array.from(document.querySelectorAll('button')).find(b => b.querySelector('i.google-symbols')?.textContent?.trim() === 'arrow_forward');
+          const submitControls = document.querySelector('flow-base-prompt-box .submit-controls, .submit-controls');
+          const sendBtn = Array.from((submitControls || document).querySelectorAll('button')).find(b => {
+            const icon = b.querySelector('i.google-symbols, mat-icon');
+            return icon?.textContent?.trim() === 'arrow_forward';
+          }) || (submitControls?.querySelector('button:last-child') as HTMLButtonElement | null);
+
           if (sendBtn) {
             sendBtn.removeAttribute('disabled'); sendBtn.removeAttribute('aria-disabled'); sendBtn.style.pointerEvents = 'auto';
             sendBtn.click();

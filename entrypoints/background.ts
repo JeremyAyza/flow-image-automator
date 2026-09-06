@@ -7,6 +7,7 @@ import {
   scriptFindFavorite, scriptRightClick, scriptClickAdd,
   scriptFindEditor, scriptFindSendBtn,
   scriptScroll, scriptSelectLastThree, scriptDeleteSelected,
+  scriptSetFormatVertical, scriptSetFormatHorizontal, scriptSetFormatVideo,
 } from '../src/automation/automation.scripts';
 import { ScriptScene } from '../src/shared/script.schemas';
 import { parseImagePromptToText } from '../src/shared/script.parser';
@@ -87,6 +88,9 @@ export default defineBackground(() => {
       TEST_SCROLL: scriptScroll,
       TEST_SELECT_LAST_THREE: scriptSelectLastThree,
       TEST_DELETE_SELECTED: scriptDeleteSelected,
+      TEST_SET_FORMAT_VERTICAL: scriptSetFormatVertical,
+      TEST_SET_FORMAT_HORIZONTAL: scriptSetFormatHorizontal,
+      TEST_SET_FORMAT_VIDEO: scriptSetFormatVideo,
     };
     if (debugActions[message.type]) {
       console.log(`=> Recibido ${message.type} para tabId:`, message.tabId);
