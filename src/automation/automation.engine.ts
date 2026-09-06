@@ -1,5 +1,5 @@
 import {
-  queue, activeTabId,
+  queue, activeTabId, setActiveTabId,
   broadcastQueue, broadcastMessage,
   markInProgress, markStatus, markRateLimitedToRetry,
   markInProgressAsRateLimited, markTimedOutAsPending,
@@ -30,7 +30,20 @@ export const knownRateLimitTileIds = new Set<string>();
 
 // ── Inicialización ────────────────────────────────────────────────────────────
 
+export function resetEngineState() {
+  isInitialized = false;
+  isInjecting = false;
+  downloadedTileIds.clear();
+  mediaIdToScene.clear();
+  knownRateLimitTileIds.clear();
+  if (pollingInterval) { clearInterval(pollingInterval); pollingInterval = null; }
+  if (countdownTimer) { clearInterval(countdownTimer); countdownTimer = null; }
+  lastProcessedSessionFolder = null;
+  rateLimitCooldownUntil = 0;
+}
+
 export async function initializeAndStart(tabId: number) {
+  setActiveTabId(tabId);
   try {
     await chrome.scripting.executeScript({
       target: { tabId },
@@ -57,22 +70,29 @@ export async function initializeAndStart(tabId: number) {
     });
   } catch (e) { console.error('[SCROLL] error', e); }
 
-  if (isInitialized) { processQueue(); startPollingIfNeeded(); return; }
-  isInitialized = true;
-
+  // Registrar todos los tiles que ya están en el DOM para no confundirlos con los nuevos
   try {
     const [{ result: initialIds }] = await chrome.scripting.executeScript({
       target: { tabId },
       func: () => {
         const ids: string[] = [];
+        if ((window as any).__FLOW_DOM__?.getTiles) {
+          const flowTiles = (window as any).__FLOW_DOM__.getTiles();
+          flowTiles.forEach((tile: HTMLElement) => {
+            const id = (window as any).__FLOW_DOM__.getMediaId(tile);
+            if (id) ids.push(id);
+          });
+        }
         document.querySelectorAll<HTMLImageElement>('img[data-media-id]').forEach(img => {
           const mid = img.getAttribute('data-media-id');
-          if (mid && img.src && !img.src.includes('data:image')) ids.push(mid);
+          const src = img.currentSrc || img.src;
+          if (mid && src && !src.includes('data:image')) ids.push(mid);
         });
         document.querySelectorAll('[data-tile-id]:has(img):not(:has([data-tile-id]))').forEach(t => {
           const id = t.getAttribute('data-tile-id');
           const img = t.querySelector('img') as HTMLImageElement;
-          if (id && img?.src && !img.src.includes('data:image')) ids.push(id);
+          const src = img?.currentSrc || img?.src;
+          if (id && src && !src.includes('data:image')) ids.push(id);
         });
         return Array.from(new Set(ids));
       },
@@ -80,6 +100,7 @@ export async function initializeAndStart(tabId: number) {
     initialIds?.forEach((id: string | null) => { if (id) downloadedTileIds.add(id); });
   } catch (e) { console.error('[INIT] error', e); }
 
+  isInitialized = true;
   processQueue();
   startPollingIfNeeded();
 }
@@ -182,32 +203,93 @@ export async function processQueue() {
               img.dispatchEvent(new MouseEvent('mouseup', opts));
               img.dispatchEvent(new MouseEvent('contextmenu', opts));
             }
-            await new Promise(r => setTimeout(r, 200));
-            const addOpt = Array.from(document.querySelectorAll('[role="menuitem"], button')).find(el => {
-              const text = el.textContent?.toLowerCase() || '';
-              return ['añadir a la petición', 'agregar a la instrucción', 'add to prompt', 'use as reference', 'add '].some(l => text.includes(l));
-            });
+            // Esperar a que el menú Angular CDK se monte en el DOM
+            let addOpt: HTMLElement | null = null;
+            for (let attempt = 0; attempt < 8; attempt++) {
+              await new Promise(r => setTimeout(r, 100));
+              const menuPanels = Array.from(document.querySelectorAll<HTMLElement>(
+                '.mat-mdc-menu-panel, flow-image-context-menu-items, flow-media-context-menu-items, [role="menu"]'
+              ));
+              const activeMenu = menuPanels.find(p => p.offsetHeight > 0) || menuPanels[menuPanels.length - 1];
+              if (activeMenu) {
+                const items = Array.from(activeMenu.querySelectorAll<HTMLElement>('flow-menu-item button, button[role="menuitem"], button'));
+                addOpt = items.find(el => {
+                  const text = (el.textContent || '').toLowerCase();
+                  const hasAddIcon = el.querySelector('mat-icon')?.textContent?.trim() === 'add_2';
+                  return (
+                    hasAddIcon ||
+                    text.includes('agregar a la instrucción') ||
+                    text.includes('añadir a la petición') ||
+                    text.includes('add to prompt') ||
+                    text.includes('use as reference')
+                  );
+                }) || null;
+                if (addOpt) break;
+              }
+            }
+
             if (addOpt) {
+              addOpt.focus();
+              addOpt.click();
+              addOpt.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true }));
+              addOpt.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, cancelable: true }));
               addOpt.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
-              const rk = Object.keys(addOpt).find(k => k.startsWith('__reactProps$'));
-              if (rk) { const p = (addOpt as any)[rk]; if (p?.onClick) try { p.onClick({ preventDefault: () => {}, stopPropagation: () => {}, nativeEvent: { isTrusted: true } }); } catch {} }
-              await new Promise(r => setTimeout(r, 300));
+              console.log('[FLOW-EXT] Opción "Agregar a la instrucción" clickeada con éxito.');
+              await new Promise(r => setTimeout(r, 600));
+            } else {
+              console.warn('[FLOW-EXT] No se encontró la opción "Agregar a la instrucción" en el menú contextual.');
             }
           }
         } catch (e) { console.warn('[FLOW-EXT] Error adding reference:', e); }
 
-        const editor = document.querySelector<HTMLElement>('[data-slate-editor="true"]');
-        if (!editor) return;
-        editor.focus();
-        const leaf = editor.querySelector('[data-slate-leaf="true"]') || editor;
-        const sel = window.getSelection(); const range = document.createRange();
-        range.selectNodeContents(leaf); range.collapse(false);
-        if (sel) { sel.removeAllRanges(); sel.addRange(range); }
+        await new Promise(r => setTimeout(r, 300));
 
-        const evt = new InputEvent('beforeinput', { inputType: 'insertText', data: promptText, bubbles: true, cancelable: true }) as any;
-        evt.getTargetRanges = () => [range];
-        editor.dispatchEvent(evt);
-        if (!evt.defaultPrevented) { document.execCommand('insertText', false, promptText); editor.dispatchEvent(new Event('input', { bubbles: true })); }
+        // Buscar editor: soporte para Angular contenteditable, textarea o Slate
+        const editor = document.querySelector<HTMLElement>(
+          'flow-base-prompt-box [contenteditable="true"], ' +
+          'flow-base-prompt-box [data-slate-editor="true"], ' +
+          'flow-base-prompt-box textarea, ' +
+          '[data-slate-editor="true"], ' +
+          '[contenteditable="true"]'
+        );
+
+        if (!editor) {
+          console.error('[FLOW-EXT] Editor de texto no encontrado para inyectar prompt.');
+          return;
+        }
+
+        editor.focus();
+        await new Promise(r => setTimeout(r, 100));
+
+        if (editor instanceof HTMLTextAreaElement || editor instanceof HTMLInputElement) {
+          editor.value = promptText;
+          editor.dispatchEvent(new Event('input', { bubbles: true }));
+          editor.dispatchEvent(new Event('change', { bubbles: true }));
+        } else {
+          const targetNode = editor.querySelector('[data-slate-leaf="true"]') || editor;
+          const sel = window.getSelection();
+          const range = document.createRange();
+          range.selectNodeContents(targetNode);
+          range.collapse(false);
+          if (sel) {
+            sel.removeAllRanges();
+            sel.addRange(range);
+          }
+
+          const evt = new InputEvent('beforeinput', {
+            inputType: 'insertText',
+            data: promptText,
+            bubbles: true,
+            cancelable: true,
+          }) as any;
+          evt.getTargetRanges = () => [range];
+          editor.dispatchEvent(evt);
+
+          if (!evt.defaultPrevented) {
+            document.execCommand('insertText', false, promptText);
+            editor.dispatchEvent(new Event('input', { bubbles: true }));
+          }
+        }
 
         setTimeout(() => {
           const submitControls = document.querySelector('flow-base-prompt-box .submit-controls, .submit-controls');
@@ -217,14 +299,14 @@ export async function processQueue() {
           }) || (submitControls?.querySelector('button:last-child') as HTMLButtonElement | null);
 
           if (sendBtn) {
-            sendBtn.removeAttribute('disabled'); sendBtn.removeAttribute('aria-disabled'); sendBtn.style.pointerEvents = 'auto';
+            sendBtn.removeAttribute('disabled');
+            sendBtn.removeAttribute('aria-disabled');
+            sendBtn.style.pointerEvents = 'auto';
+            sendBtn.focus();
             sendBtn.click();
-            const rk = Object.keys(sendBtn).find(k => k.startsWith('__reactProps$'));
-            if (rk) { const p = (sendBtn as any)[rk]; if (p?.onClick) try { p.onClick({ preventDefault: () => {}, stopPropagation: () => {}, nativeEvent: { isTrusted: true } }); } catch {} }
+          } else {
+            editor.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', code: 'Enter', keyCode: 13, bubbles: true, cancelable: true }));
           }
-          editor.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', code: 'Enter', keyCode: 13, bubbles: true, cancelable: true }));
-          const rk = Object.keys(editor).find(k => k.startsWith('__reactProps$'));
-          if (rk) { const p = (editor as any)[rk]; if (p?.onKeyDown) try { p.onKeyDown({ key: 'Enter', code: 'Enter', keyCode: 13, which: 13, preventDefault: () => {}, stopPropagation: () => {}, nativeEvent: { isTrusted: true } }); } catch {} }
         }, 800);
       },
       args: [nextPending.prompt],
@@ -272,22 +354,40 @@ export function startPollingIfNeeded() {
           const tiles: [string, string][] = [];
           const rateLimitTileIds: string[] = [];
 
-          // 1. Angular Flow: img[data-media-id]
-          document.querySelectorAll<HTMLImageElement>('img[data-media-id]').forEach(img => {
-            const id = img.getAttribute('data-media-id');
-            if (!id) return;
-            if (img.src && !img.src.includes('data:image')) {
-              tiles.push([id, img.src.startsWith('/') ? location.origin + img.src : img.src]);
-            }
-          });
+          // 1. FlowDOM helper
+          if ((window as any).__FLOW_DOM__?.getTiles) {
+            const flowTiles = (window as any).__FLOW_DOM__.getTiles();
+            flowTiles.forEach((tile: HTMLElement) => {
+              const img = (window as any).__FLOW_DOM__.getTileImage(tile);
+              const id = (window as any).__FLOW_DOM__.getMediaId(tile);
+              const src = img?.currentSrc || img?.src;
+              if (id && src && !src.includes('data:image')) {
+                const fullUrl = src.startsWith('//') ? location.protocol + src : src.startsWith('/') ? location.origin + src : src;
+                tiles.push([id, fullUrl]);
+              }
+            });
+          }
 
-          // 2. Legacy fallback: [data-tile-id]
+          // 2. Angular Flow fallback: img[data-media-id]
+          if (tiles.length === 0) {
+            document.querySelectorAll<HTMLImageElement>('img[data-media-id]').forEach(img => {
+              const id = img.getAttribute('data-media-id');
+              if (!id) return;
+              const src = img.currentSrc || img.src;
+              if (src && !src.includes('data:image')) {
+                tiles.push([id, src.startsWith('/') ? location.origin + src : src]);
+              }
+            });
+          }
+
+          // 3. Legacy fallback: [data-tile-id]
           document.querySelectorAll('[data-tile-id]:has(img):not(:has([data-tile-id]))').forEach(t => {
             const id = t.getAttribute('data-tile-id');
             if (!id) return;
             const img = t.querySelector('img') as HTMLImageElement;
-            if (img?.src && !img.src.includes('data:image')) {
-              tiles.push([id, img.src.startsWith('/') ? location.origin + img.src : img.src]);
+            const src = img?.currentSrc || img?.src;
+            if (src && !src.includes('data:image')) {
+              tiles.push([id, src.startsWith('/') ? location.origin + src : src]);
               return;
             }
             const text = t.textContent?.toLowerCase() || '';

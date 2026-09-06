@@ -128,18 +128,35 @@ export function scriptClickAdd(tabId: number) {
     target: { tabId },
     world: 'MAIN',
     func: () => {
-      const addOpt = Array.from(document.querySelectorAll('[role="menuitem"], button')).find(el => {
-        const text = el.textContent?.toLowerCase() || '';
-        return text.includes('añadir a la petición') || text.includes('add to prompt') || text.includes('use as reference') || text.includes('agregar a la instrucción');
+      const menuPanels = Array.from(document.querySelectorAll<HTMLElement>(
+        '.mat-mdc-menu-panel, flow-image-context-menu-items, flow-media-context-menu-items, [role="menu"]'
+      ));
+      const activeMenu = menuPanels.find(p => p.offsetHeight > 0) || menuPanels[menuPanels.length - 1];
+      const container = activeMenu || document;
+
+      const items = Array.from(container.querySelectorAll<HTMLElement>('flow-menu-item button, button[role="menuitem"], button'));
+      const addOpt = items.find(el => {
+        const text = (el.textContent || '').toLowerCase();
+        const hasAddIcon = el.querySelector('mat-icon')?.textContent?.trim() === 'add_2';
+        return (
+          hasAddIcon ||
+          text.includes('agregar a la instrucción') ||
+          text.includes('añadir a la petición') ||
+          text.includes('add')
+        );
       });
+
       if (addOpt) {
-        (addOpt as HTMLElement).style.backgroundColor = '#22c55e';
+        addOpt.style.backgroundColor = '#22c55e';
+        addOpt.focus();
+        addOpt.click();
+        addOpt.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true }));
+        addOpt.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, cancelable: true }));
         addOpt.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
-        const rk = Object.keys(addOpt).find(k => k.startsWith('__reactProps$'));
-        if (rk) { const p = (addOpt as any)[rk]; if (p?.onClick) try { p.onClick({ preventDefault: () => {}, stopPropagation: () => {}, nativeEvent: { isTrusted: true } }); } catch {} }
-        console.log('[DEBUG: CLICK ADD] Opción clickeada exitosamente.');
+        console.log('[DEBUG: CLICK ADD] Opción "Agregar a la instrucción" clickeada exitosamente:', addOpt);
+        setTimeout(() => { addOpt.style.backgroundColor = ''; }, 2000);
       } else {
-        console.error('[DEBUG: CLICK ADD] Menú "Añadir a la petición" no encontrado.');
+        console.error('[DEBUG: CLICK ADD] Menú "Agregar a la instrucción" no encontrado en:', container);
       }
     },
   });

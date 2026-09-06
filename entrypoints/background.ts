@@ -1,6 +1,6 @@
 import { browser } from 'wxt/browser';
 import { queue, setActiveTabId, addToQueue, clearQueue, broadcastQueue } from '../src/queue/queue.service';
-import { knownRateLimitTileIds, mediaIdToScene, initializeAndStart } from '../src/automation/automation.engine';
+import { knownRateLimitTileIds, mediaIdToScene, initializeAndStart, resetEngineState } from '../src/automation/automation.engine';
 import { handleBatchResponse } from '../src/media/media.service';
 import {
   scriptDetectTiles, scriptLogMediaIds,
@@ -64,8 +64,7 @@ export default defineBackground(() => {
 
     if (message.type === 'CLEAR_QUEUE') {
       clearQueue();
-      mediaIdToScene.clear();
-      knownRateLimitTileIds.clear();
+      resetEngineState();
       broadcastQueue();
       sendResponse({ success: true });
       return true;
