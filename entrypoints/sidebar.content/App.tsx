@@ -12,12 +12,22 @@ function App() {
   const { error } = useAppStore();
 
   useEffect(() => {
-    const originalMargin = document.documentElement.style.marginLeft;
-    document.documentElement.style.marginLeft = `${SIDEBAR_WIDTH}px`;
-    document.documentElement.style.transition = 'margin-left 0.3s ease';
-    return () => {
-      document.documentElement.style.marginLeft = originalMargin;
-    };
+    const appRoot = document.querySelector('aisandbox-root') as HTMLElement;
+    if (appRoot) {
+      const originalTransform = appRoot.style.transform;
+      const originalWidth = appRoot.style.width;
+      const originalTransition = appRoot.style.transition;
+
+      appRoot.style.width = `calc(100vw - ${SIDEBAR_WIDTH}px)`;
+      appRoot.style.transform = `translateX(${SIDEBAR_WIDTH}px)`;
+      appRoot.style.transition = 'transform 0.3s ease, width 0.3s ease';
+
+      return () => {
+        appRoot.style.transform = originalTransform;
+        appRoot.style.width = originalWidth;
+        appRoot.style.transition = originalTransition;
+      };
+    }
   }, []);
 
   return (
