@@ -127,12 +127,33 @@ export async function processQueue() {
       world: 'MAIN',
       func: async (promptText: string) => {
         try {
+          const virtuosoList = document.querySelector('[data-testid="virtuoso-item-list"]');
+          let targetScroller: Element | Window = window;
+          let scrollHeight = document.body.scrollHeight;
+          if (virtuosoList) {
+            let scroller = virtuosoList.parentElement;
+            while (scroller && scroller !== document.body) {
+              const style = window.getComputedStyle(scroller);
+              if (style.overflowY === 'auto' || style.overflowY === 'scroll') break;
+              scroller = scroller.parentElement;
+            }
+            if (scroller && scroller !== document.body) { targetScroller = scroller; scrollHeight = scroller.scrollHeight; }
+          }
+          if (targetScroller !== window) {
+            (targetScroller as HTMLElement).focus();
+            (targetScroller as HTMLElement).dispatchEvent(new KeyboardEvent('keydown', { key: 'End', code: 'End', keyCode: 35, bubbles: true, cancelable: true }));
+          }
+          targetScroller.scrollTo({ top: scrollHeight, behavior: 'smooth' });
+          await new Promise(r => setTimeout(r, 800));
+
           const tiles = Array.from(document.querySelectorAll('[data-tile-id]'));
-          const favTile = tiles.find(t => {
-            const hasFav = Array.from(t.querySelectorAll('i.google-symbols')).some(i => i.textContent?.trim() === 'favorite');
-            return t.querySelector('img') && hasFav;
+          const favTiles = tiles.filter(t => {
+            const favIcons = Array.from(t.querySelectorAll('i.google-symbols')).filter(i => i.textContent?.trim() === 'favorite');
+            const hasValidFav = favIcons.some(icon => !icon.closest('[role="toolbar"]'));
+            return t.querySelector('img') && hasValidFav;
           });
-          if (favTile) {
+          
+          for (const favTile of favTiles) {
             const img = favTile.querySelector('img');
             if (img) {
               const rect = img.getBoundingClientRect();

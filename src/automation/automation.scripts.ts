@@ -24,9 +24,16 @@ export function scriptScroll(tabId: number) {
         if (scroller && scroller !== document.body) { targetScroller = scroller; scrollHeight = scroller.scrollHeight; }
       }
       console.log('[TEST 0] Haciendo scroll al final...');
-      targetScroller.scrollTo(0, scrollHeight);
+      
+      // Hacemos focus en la lista para que tome el evento de teclado
+      if (targetScroller !== window) {
+        (targetScroller as HTMLElement).focus();
+        (targetScroller as HTMLElement).dispatchEvent(new KeyboardEvent('keydown', { key: 'End', code: 'End', keyCode: 35, bubbles: true, cancelable: true }));
+      }
+      
+      // Por si acaso, hacemos un scroll suave (smooth) sin regresarlo arriba
+      targetScroller.scrollTo({ top: scrollHeight, behavior: 'smooth' });
       await new Promise(r => setTimeout(r, 800));
-      targetScroller.scrollTo(0, 0);
       console.log('[TEST 0] Scroll completado');
     },
   });
@@ -39,8 +46,9 @@ export function scriptFindFavorite(tabId: number) {
     func: () => {
       const tiles = Array.from(document.querySelectorAll('[data-tile-id]:has(img):not(:has([data-tile-id]))'));
       const favTile = tiles.find(t => {
-        const hasFav = Array.from(t.querySelectorAll('i.google-symbols')).some(i => i.textContent?.trim() === 'favorite');
-        return t.querySelector('img') && hasFav;
+        const favIcons = Array.from(t.querySelectorAll('i.google-symbols')).filter(i => i.textContent?.trim() === 'favorite');
+        const hasValidFav = favIcons.some(icon => !icon.closest('[role="toolbar"]'));
+        return t.querySelector('img') && hasValidFav;
       }) as HTMLElement;
       if (favTile) { favTile.style.border = '5px solid red'; favTile.style.boxSizing = 'border-box'; console.log('[TEST 1] SUCCESS'); }
       else console.error('[TEST 1] FAIL: Favorite tile not found');
@@ -55,8 +63,9 @@ export function scriptRightClick(tabId: number) {
     func: () => {
       const tiles = Array.from(document.querySelectorAll('[data-tile-id]:has(img):not(:has([data-tile-id]))'));
       const favTile = tiles.find(t => {
-        const hasFav = Array.from(t.querySelectorAll('i.google-symbols')).some(i => i.textContent?.trim() === 'favorite');
-        return t.querySelector('img') && hasFav;
+        const favIcons = Array.from(t.querySelectorAll('i.google-symbols')).filter(i => i.textContent?.trim() === 'favorite');
+        const hasValidFav = favIcons.some(icon => !icon.closest('[role="toolbar"]'));
+        return t.querySelector('img') && hasValidFav;
       }) as HTMLElement;
       if (favTile) {
         favTile.style.border = '5px solid blue';
