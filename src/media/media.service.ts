@@ -46,8 +46,6 @@ function processBatchMedia(batchMedia: any[], fallbackDisplayName?: string) {
 }
 
 export function handleBatchResponse(raw: unknown) {
-  console.log('=== [FLOW] FULL BATCH RESPONSE PAYLOAD ===');
-  console.log(JSON.stringify(raw, null, 2));
   try {
     const data = unwrapTrpc(raw);
     const workflows: any[] = (data as any)?.workflows ?? [];

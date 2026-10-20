@@ -20,17 +20,12 @@ export default defineContentScript({
         url = (args[0] as any).url;
       }
 
-      // Log every fetch so we can confirm the interceptor is running
-      console.log('[FLOW-EXT] fetch:', url.slice(0, 120));
-
       const response = await _originalFetch.apply(window, args);
 
       // Intercept tRPC or API calls that may contain batch/media generation info
       if (url.includes('/trpc/') || url.includes('/api/') || url.includes('batchGenerateImages') || url.includes('generate')) {
         response.clone().text().then((text: string) => {
           if (!text.includes('batchId') && !text.includes('mediaId') && !text.includes('workflowId')) return;
-          console.log('[FLOW-EXT] response with batch/media info from:', url.slice(0, 120));
-          console.log('[FLOW-EXT] response body (first 500):', text.slice(0, 500));
           // Try flat JSON first, then NDJSON
           try {
             const data = JSON.parse(text);
@@ -62,11 +57,9 @@ export default defineContentScript({
 
     XMLHttpRequest.prototype.send = function (...args: any[]) {
       if ((this as any)._flowUrl?.includes('batchGenerateImages')) {
-        console.log('[FLOW-EXT] batchGenerateImages XHR detected:', (this as any)._flowUrl);
         this.addEventListener('load', function (this: XMLHttpRequest) {
           try {
             const data = JSON.parse(this.responseText);
-            console.log('[FLOW-EXT] batchGenerateImages XHR response:', JSON.stringify(data).slice(0, 500));
             window.postMessage({ type: 'FLOW_BATCH_RESPONSE', data }, '*');
           } catch (e) {
             console.warn('[FLOW-EXT] batchGenerateImages XHR response is not JSON:', e);
