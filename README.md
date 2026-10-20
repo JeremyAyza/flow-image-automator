@@ -7,6 +7,8 @@ Experimental Chrome extension that takes a script of image prompts, runs them on
 > Status: experimental, personal project. It explores how far a Manifest V3 extension can drive a complex single-page app that was never meant to be scripted. I use it with my own Flow account as the image step of my video pipeline. It is not affiliated with Google, uses no Google API, and breaks whenever Flow changes its interface. If you try it, use your own account and check Flow's terms first.
 
 <!-- GIF: side panel loading a script and the queue filling up -->
+<img width="1905" height="913" alt="image" src="https://github.com/user-attachments/assets/455cc52e-559c-4728-93b9-0e350304e41f" />
+
 
 ## Why I built it
 
