@@ -18,14 +18,14 @@ export default defineBackground(() => {
   // Registrar el inyector en el MAIN world
   chrome.scripting.registerContentScripts([{
     id: 'flow-injector',
-    matches: ['*://*.google.com/*', '*://labs.google/*'],
+    matches: ['*://labs.google/*', '*://flow.google.com/*'],
     js: ['injector.js'],
     world: 'MAIN',
     runAt: 'document_start',
   }]).catch(() => {
     chrome.scripting.updateContentScripts([{
       id: 'flow-injector',
-      matches: ['*://*.google.com/*', '*://labs.google/*'],
+      matches: ['*://labs.google/*', '*://flow.google.com/*'],
       js: ['injector.js'],
       world: 'MAIN',
       runAt: 'document_start',

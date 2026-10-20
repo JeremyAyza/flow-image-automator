@@ -1,7 +1,7 @@
 import { FlowDOM } from '../src/automation/flow-dom';
 
 export default defineContentScript({
-  matches: ['*://*.google.com/*', '*://labs.google/*'],
+  matches: ['*://labs.google/*', '*://flow.google.com/*'],
   world: 'MAIN',
   runAt: 'document_start',
   main() {
