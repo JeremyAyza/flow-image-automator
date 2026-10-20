@@ -1,8 +1,13 @@
 {
-  "name": "wxt-react-starter",
-  "description": "manifest.json description",
+  "name": "flow-image-automator",
+  "description": "Experimental Chrome extension that runs a script of image prompts through Google Labs Flow and saves each image by scene",
   "private": true,
-  "version": "0.0.0",
+  "version": "0.1.0",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/JeremyAyza/flow-image-automator.git"
+  },
   "type": "module",
   "scripts": {
     "dev": "wxt",
@@ -17,11 +22,8 @@
   "dependencies": {
     "clsx": "^2.1.1",
     "immer": "^11.1.16",
-    "jszip": "^3.10.1",
-    "p-queue": "^9.3.3",
     "react": "^19.2.4",
     "react-dom": "^19.2.4",
-    "webext-bridge": "^6.0.1",
     "zod": "^4.4.3",
     "zustand": "^5.0.14"
   },
